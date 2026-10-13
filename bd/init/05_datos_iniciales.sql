@@ -33,8 +33,7 @@ INSERT INTO permisos (codigo, descripcion) VALUES
     ('VER_AUDITORIA',         'Consultar la auditoria'),
     ('GESTIONAR_USUARIOS',    'Crear, editar, activar y desactivar usuarios'),
     ('GESTIONAR_RETENCION',   'Configurar respaldos y plazos de conservacion'),
-    ('ELIMINAR_LOGICO',       'Dar de baja un tramite'),
-    ('ELIMINAR_FISICO',       'Eliminar definitivamente (solo correcciones)');
+    ('ELIMINAR_LOGICO',       'Dar de baja o reactivar un tramite');
 
 -- Matriz de permisos (confirmada en el contexto del proyecto).
 INSERT INTO roles_permisos (rol_id, permiso_id)

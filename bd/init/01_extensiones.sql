@@ -19,8 +19,10 @@ $$ LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT;
 
 -- Forma unica de un nombre para compararlo:
 -- "Gob. Autónomo  de La Paz" -> "gob. autonomo de la paz"
+-- Lleva "public." porque pg_restore trabaja con search_path vacio: sin el
+-- esquema, los respaldos no se pueden restaurar (columnas e indices la usan).
 CREATE FUNCTION normalizar_texto(text) RETURNS text AS $$
-    SELECT regexp_replace(unaccent_inmutable(lower(btrim($1))), '\s+', ' ', 'g')
+    SELECT regexp_replace(public.unaccent_inmutable(lower(btrim($1))), '\s+', ' ', 'g')
 $$ LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT;
 
 -- Busqueda de texto en espanol que ignora tildes:

@@ -23,6 +23,13 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
      -v app_usuario="$APP_BD_USUARIO" -v app_clave="$APP_BD_CLAVE" -v base="$POSTGRES_DB" \
      -v admin_nombre="$ADMIN_NOMBRE" -v admin_correo="$ADMIN_CORREO" -v admin_clave="$ADMIN_CLAVE" <<'SQL'
 
+-- 0. Nadie entra ni ejecuta funciones por defecto: solo las cuentas a las
+--    que se les da permiso de forma explicita.
+REVOKE ALL ON DATABASE :"base" FROM PUBLIC;
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+
 -- 1. Cuenta de la aplicacion: puede leer y escribir datos, pero no
 --    cambiar la estructura ni borrar la auditoria o los tramites.
 CREATE ROLE :"app_usuario" LOGIN PASSWORD :'app_clave';
@@ -31,7 +38,14 @@ GRANT USAGE ON SCHEMA public TO :"app_usuario";
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO :"app_usuario";
 GRANT DELETE ON sesiones, codigos_verificacion, precedentes TO :"app_usuario";
 REVOKE UPDATE ON auditoria FROM :"app_usuario";
+-- La matriz de permisos es fija (05_datos_iniciales.sql) y se cambia con un
+-- script del administrador de la base: si la aplicacion pudiera escribirla,
+-- un fallo en ella bastaria para darse cualquier permiso.
+REVOKE INSERT, UPDATE ON roles, permisos, roles_permisos FROM :"app_usuario";
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO :"app_usuario";
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO :"app_usuario";
+-- Mantenimiento: solo el administrador de la base.
+REVOKE EXECUTE ON FUNCTION unificar_catalogo(TEXT, INT, INT), reindexar_tramites() FROM :"app_usuario";
 
 -- 2. Primer administrador. Contrasena con bcrypt (pgcrypto); debe
 --    cambiarla en su primer ingreso.

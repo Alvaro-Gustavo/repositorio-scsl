@@ -43,7 +43,7 @@ CREATE TABLE usuarios (
     activo                  BOOLEAN NOT NULL DEFAULT true,
     correo_verificado       BOOLEAN NOT NULL DEFAULT false,
     debe_cambiar_contrasena BOOLEAN NOT NULL DEFAULT true,
-    totp_secreto            VARCHAR(64),               -- segundo factor (opcional)
+    totp_secreto            TEXT,                      -- segundo factor (opcional), cifrado por la aplicacion
     totp_activo             BOOLEAN NOT NULL DEFAULT false,
     intentos_fallidos       SMALLINT NOT NULL DEFAULT 0,
     bloqueado_hasta         TIMESTAMPTZ,

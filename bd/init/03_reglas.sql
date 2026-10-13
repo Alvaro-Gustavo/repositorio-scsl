@@ -6,7 +6,8 @@
 --   1. Fechas de actualizacion automaticas
 --   2. Permisos: funciones de consulta
 --   3. Flujo del tramite (asignar, concluir, archivar)
---   4. Subida del informe (solo el abogado asignado)
+--   4. Subida del informe (solo el abogado asignado; el PDF subido no se altera)
+--      y registro de precedentes (solo con permiso)
 --   5. Indice de busqueda
 --   6. Catalogo de prompts (proponer, aprobar, usar)
 --   7. Auditoria inmutable
@@ -48,6 +49,17 @@ RETURNS TEXT LANGUAGE sql STABLE AS $$
     SELECT r.nombre FROM usuarios u JOIN roles r ON r.id = u.rol_id WHERE u.id = p_usuario
 $$;
 
+-- Ajustes de mantenimiento (scsl.mantenimiento, scsl.purga_auditoria):
+-- solo cuentan si los activa el dueno de la base. Cualquier sesion puede
+-- hacer SET; si bastara con eso, la cuenta de la aplicacion se saltaria
+-- todas las reglas del flujo.
+CREATE FUNCTION ajuste_del_dueno_activo(p_ajuste TEXT)
+RETURNS BOOLEAN LANGUAGE sql STABLE AS $$
+    SELECT coalesce(current_setting(p_ajuste, true), '') = 'on'
+       AND pg_has_role(current_user,
+                       (SELECT relowner FROM pg_class WHERE oid = 'public.tramites'::regclass), 'MEMBER')
+$$;
+
 -- ============================================================
 -- 5 (se define antes porque el flujo la usa). INDICE DE BUSQUEDA
 -- Pesos: A = codigos y asunto; B = catalogos y criterios de precedentes;
@@ -87,6 +99,25 @@ BEGIN
         NEW.actualizado_en := now();
     END IF;
 
+    IF NOT ajuste_del_dueno_activo('scsl.mantenimiento') THEN
+        -- El origen se fija al registrar: cambiarlo a MIGRACION saltaria el flujo.
+        IF TG_OP = 'UPDATE' AND NEW.origen_registro IS DISTINCT FROM OLD.origen_registro THEN
+            RAISE EXCEPTION 'El origen de un tramite no se cambia';
+        END IF;
+        -- Solo una importacion del Excel en curso crea registros migrados.
+        IF TG_OP = 'INSERT' AND NEW.origen_registro = 'MIGRACION' AND (
+               NOT usuario_tiene_permiso(NEW.creado_por, 'IMPORTAR_EXCEL')
+               OR NOT EXISTS (SELECT 1 FROM importaciones_excel ie
+                               WHERE ie.id = NEW.importacion_id AND ie.estado = 'EN_CURSO')) THEN
+            RAISE EXCEPTION 'Solo una importacion del Excel en curso registra tramites migrados';
+        END IF;
+        -- Dar de baja o reactivar, tambien a los migrados, exige ELIMINAR_LOGICO.
+        IF TG_OP = 'UPDATE' AND NEW.activo IS DISTINCT FROM OLD.activo
+           AND NOT usuario_tiene_permiso(v_quien, 'ELIMINAR_LOGICO') THEN
+            RAISE EXCEPTION 'No tiene permiso para dar de baja tramites';
+        END IF;
+    END IF;
+
     -- Baja logica: se registra cuando y quien.
     IF NOT NEW.activo AND (TG_OP = 'INSERT' OR OLD.activo) THEN
         NEW.baja_en  := COALESCE(NEW.baja_en, now());
@@ -96,9 +127,8 @@ BEGIN
     END IF;
 
     -- Las reglas del flujo no se aplican a los registros migrados ni durante
-    -- tareas de mantenimiento (unificar catalogos).
-    IF NEW.origen_registro = 'SISTEMA'
-       AND coalesce(current_setting('scsl.mantenimiento', true), '') <> 'on' THEN
+    -- tareas de mantenimiento del dueno de la base (unificar catalogos).
+    IF NEW.origen_registro = 'SISTEMA' AND NOT ajuste_del_dueno_activo('scsl.mantenimiento') THEN
         -- Solo registra tramites quien tiene CREAR_REGISTRO (secretaria, jefe, admin).
         IF TG_OP = 'INSERT' AND NOT usuario_tiene_permiso(NEW.creado_por, 'CREAR_REGISTRO') THEN
             RAISE EXCEPTION 'No tiene permiso para registrar tramites';
@@ -114,9 +144,20 @@ BEGIN
             END IF;
         END IF;
 
+        -- Sacar un tramite del archivo exige el mismo permiso que archivarlo.
+        IF TG_OP = 'UPDATE' AND OLD.estado_tramite = 'ARCHIVADO' AND NEW.estado_tramite <> 'ARCHIVADO'
+           AND NOT usuario_tiene_permiso(v_quien, 'ARCHIVAR_TRAMITE') THEN
+            RAISE EXCEPTION 'No tiene permiso para desarchivar tramites';
+        END IF;
+
         -- Asignacion
         IF NEW.estado_tramite IN ('RECIBIDO', 'EN_ELABORACION') THEN
             IF NEW.profesional_id IS NULL THEN
+                -- Quitar el abogado es una reasignacion: el abogado no se quita el tramite.
+                IF TG_OP = 'UPDATE' AND OLD.profesional_id IS NOT NULL
+                   AND NOT usuario_tiene_permiso(v_quien, 'ASIGNAR_TRAMITE') THEN
+                    RAISE EXCEPTION 'No tiene permiso para asignar tramites';
+                END IF;
                 NEW.estado_tramite   := 'RECIBIDO';
                 NEW.fecha_asignacion := NULL;
                 NEW.asignado_por     := NULL;
@@ -131,6 +172,12 @@ BEGIN
                 NEW.estado_tramite   := 'EN_ELABORACION';
                 NEW.fecha_asignacion := now();
                 NEW.asignado_por     := v_quien;
+            ELSE
+                -- Mismo abogado: el estado y los datos de la asignacion los fija
+                -- la base; a mano quedaria RECIBIDO con abogado y fuera de su bandeja.
+                NEW.estado_tramite   := 'EN_ELABORACION';
+                NEW.fecha_asignacion := OLD.fecha_asignacion;
+                NEW.asignado_por     := OLD.asignado_por;
             END IF;
         END IF;
 
@@ -215,6 +262,47 @@ END $$;
 CREATE TRIGGER trg_informes_despues_subir AFTER INSERT ON informes
     FOR EACH ROW WHEN (NEW.activo) EXECUTE FUNCTION informes_despues_subir();
 
+-- Un informe subido no se altera: ruta, huella y autor son la prueba de
+-- integridad del PDF. Solo se completan los datos de lectura (texto,
+-- paginas, OCR). La version activa cambia unicamente cuando la subida de
+-- una nueva desactiva la anterior (pg_trigger_depth > 1); hacerlo a mano
+-- dejaria un tramite concluido sin informe.
+CREATE FUNCTION informes_antes_modificar() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF ajuste_del_dueno_activo('scsl.mantenimiento') THEN
+        RETURN NEW;
+    END IF;
+    IF (NEW.tramite_id, NEW.ruta_archivo, NEW.nombre_original, NEW.tamano_bytes,
+        NEW.huella_sha256, NEW.subido_por, NEW.subido_en)
+       IS DISTINCT FROM
+       (OLD.tramite_id, OLD.ruta_archivo, OLD.nombre_original, OLD.tamano_bytes,
+        OLD.huella_sha256, OLD.subido_por, OLD.subido_en) THEN
+        RAISE EXCEPTION 'Un informe subido no se modifica: suba una version nueva';
+    END IF;
+    IF NEW.activo IS DISTINCT FROM OLD.activo AND (NEW.activo OR pg_trigger_depth() = 1) THEN
+        RAISE EXCEPTION 'La version activa del informe cambia solo al subir una version nueva';
+    END IF;
+    RETURN NEW;
+END $$;
+
+CREATE TRIGGER trg_informes_antes_modificar BEFORE UPDATE ON informes
+    FOR EACH ROW EXECUTE FUNCTION informes_antes_modificar();
+
+-- ============================================================
+-- PRECEDENTES: los registra quien tiene GESTIONAR_PRECEDENTES
+-- (abogado, jefe, admin).
+-- ============================================================
+CREATE FUNCTION precedentes_antes_guardar() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF NOT usuario_tiene_permiso(COALESCE(NEW.actualizado_por, NEW.creado_por), 'GESTIONAR_PRECEDENTES') THEN
+        RAISE EXCEPTION 'No tiene permiso para registrar precedentes';
+    END IF;
+    RETURN NEW;
+END $$;
+
+CREATE TRIGGER trg_precedentes_antes_guardar BEFORE INSERT OR UPDATE ON precedentes
+    FOR EACH ROW EXECUTE FUNCTION precedentes_antes_guardar();
+
 -- ============================================================
 -- 5. INDICE DE BUSQUEDA: recalculo cuando cambian datos relacionados
 -- ============================================================
@@ -289,10 +377,11 @@ BEGIN
         RAISE EXCEPTION 'No tiene permiso para proponer prompts';
     END IF;
 
-    -- Editar un prompt vigente o cambiar su estado: solo quien gestiona el catalogo.
-    IF TG_OP = 'UPDATE' AND OLD.estado = 'VIGENTE'
+    -- Editar un prompt vigente o retirado, o cambiar su estado: solo quien
+    -- gestiona el catalogo (un retirado no lo revive quien lo propuso).
+    IF TG_OP = 'UPDATE' AND OLD.estado IN ('VIGENTE', 'RETIRADO')
        AND NOT usuario_tiene_permiso(v_quien, 'GESTIONAR_PROMPTS') THEN
-        RAISE EXCEPTION 'Solo el jefe modifica un prompt vigente';
+        RAISE EXCEPTION 'Solo el jefe modifica un prompt vigente o retirado';
     END IF;
 
     IF NEW.estado = 'VIGENTE' AND (TG_OP = 'INSERT' OR OLD.estado <> 'VIGENTE') THEN
@@ -336,13 +425,15 @@ END $$;
 
 -- ============================================================
 -- 7. AUDITORIA INMUTABLE
--- Solo se borra por la politica de retencion, de forma explicita:
+-- Solo se borra por la politica de retencion, de forma explicita y como
+-- dueno de la base (la cuenta de la aplicacion no puede):
 --   BEGIN; SET LOCAL scsl.purga_auditoria = 'on';
 --   DELETE FROM auditoria WHERE creado_en < now() - interval '5 years'; COMMIT;
+-- TRUNCATE no dispara los triggers por fila: tiene el suyo y nunca se permite.
 -- ============================================================
 CREATE FUNCTION auditoria_inmutable() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-    IF TG_OP = 'DELETE' AND coalesce(current_setting('scsl.purga_auditoria', true), '') = 'on' THEN
+    IF TG_OP = 'DELETE' AND ajuste_del_dueno_activo('scsl.purga_auditoria') THEN
         RETURN OLD;
     END IF;
     RAISE EXCEPTION 'La auditoria no puede modificarse ni eliminarse';
@@ -350,6 +441,8 @@ END $$;
 
 CREATE TRIGGER trg_auditoria_inmutable BEFORE UPDATE OR DELETE ON auditoria
     FOR EACH ROW EXECUTE FUNCTION auditoria_inmutable();
+CREATE TRIGGER trg_auditoria_sin_truncate BEFORE TRUNCATE ON auditoria
+    FOR EACH STATEMENT EXECUTE FUNCTION auditoria_inmutable();
 
 -- ============================================================
 -- 8. CONSULTAS DE APOYO
@@ -444,4 +537,17 @@ BEGIN
     END IF;
     EXECUTE format('DELETE FROM %I WHERE id = $1', p_tabla) USING p_eliminar;
     RETURN v_movidos;
+END $$;
+
+-- Puerta de la aplicacion para unificar: la cuenta de la aplicacion no
+-- ejecuta unificar_catalogo (06_seguridad.sh), pero si esta funcion, que
+-- corre como dueno de la base y exige GESTIONAR_CATALOGOS al usuario.
+--   SELECT unificar_catalogo_app(1, 'entidades', 12, 47);
+CREATE FUNCTION unificar_catalogo_app(p_usuario INT, p_tabla TEXT, p_conservar INT, p_eliminar INT)
+RETURNS INT LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
+    IF NOT usuario_tiene_permiso(p_usuario, 'GESTIONAR_CATALOGOS') THEN
+        RAISE EXCEPTION 'No tiene permiso para unificar catalogos';
+    END IF;
+    RETURN unificar_catalogo(p_tabla, p_conservar, p_eliminar);
 END $$;

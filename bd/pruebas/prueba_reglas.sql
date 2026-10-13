@@ -73,6 +73,24 @@ SELECT pg_temp.verificar((SELECT estado_tramite = 'EN_ELABORACION' AND asignado_
                          'al asignar pasa a EN_ELABORACION y guarda quien asigno');
 SELECT pg_temp.verificar((SELECT count(*) = 1 FROM v_pendientes WHERE abogado_usuario_id = 902),
                          'aparece en los pendientes de la abogada');
+SELECT pg_temp.verificar((SELECT count(*) = 1 FROM notificaciones WHERE usuario_id = 902 AND tipo = 'TRAMITE_ASIGNADO'
+                             AND tramite_id = '00000000-0000-0000-0000-000000000001' AND creado_por = 904),
+                         'la abogada recibe la notificacion de la asignacion');
+UPDATE tramites SET estado_tramite = 'RECIBIDO', asignado_por = 902, actualizado_por = 902
+ WHERE id = '00000000-0000-0000-0000-000000000001';
+SELECT pg_temp.verificar((SELECT estado_tramite = 'EN_ELABORACION' AND asignado_por = 904
+                            FROM tramites WHERE id = '00000000-0000-0000-0000-000000000001'),
+                         'el estado y quien asigno no se cambian a mano mientras siga el mismo abogado');
+SELECT pg_temp.verificar((SELECT count(*) = 1 FROM notificaciones WHERE usuario_id = 902),
+                         'sin cambio de abogado no se repite la notificacion');
+SELECT pg_temp.debe_fallar($$UPDATE tramites SET profesional_id = NULL, actualizado_por = 902
+    WHERE id = '00000000-0000-0000-0000-000000000001'$$, 'No tiene permiso para asignar');
+SELECT pg_temp.debe_fallar($$UPDATE tramites SET activo = false, motivo_baja = 'x', actualizado_por = 904
+    WHERE id = '00000000-0000-0000-0000-000000000001'$$, 'No tiene permiso para dar de baja');
+SELECT pg_temp.debe_fallar($$UPDATE tramites SET origen_registro = 'MIGRACION', actualizado_por = 904
+    WHERE id = '00000000-0000-0000-0000-000000000001'$$, 'El origen de un tramite no se cambia');
+SELECT pg_temp.debe_fallar($$INSERT INTO tramites (hoja_ruta, origen_registro, creado_por)
+    VALUES ('HR-MIG', 'MIGRACION', 904)$$, 'importacion del Excel en curso');
 
 -- ---------- 4. Conclusion ----------
 SELECT pg_temp.debe_fallar($$UPDATE tramites SET estado_tramite = 'CONCLUIDO'
@@ -96,6 +114,10 @@ VALUES ('00000000-0000-0000-0000-000000000001', '2026/10/b.pdf', 'informe-v2.pdf
 SELECT pg_temp.verificar((SELECT count(*) FILTER (WHERE activo) = 1 AND count(*) = 2
                             FROM informes WHERE tramite_id = '00000000-0000-0000-0000-000000000001'),
                          'al resubir queda un solo informe activo y se conserva el anterior');
+SELECT pg_temp.debe_fallar($$UPDATE informes SET huella_sha256 = repeat('f', 64)
+    WHERE tramite_id = '00000000-0000-0000-0000-000000000001' AND activo$$, 'no se modifica');
+SELECT pg_temp.debe_fallar($$UPDATE informes SET activo = false
+    WHERE tramite_id = '00000000-0000-0000-0000-000000000001' AND activo$$, 'La version activa');
 SELECT pg_temp.debe_fallar($$UPDATE tramites SET profesional_id = 902, actualizado_por = 901
     WHERE id = '00000000-0000-0000-0000-000000000001'$$, 'concluido');
 
@@ -105,6 +127,8 @@ SELECT pg_temp.debe_fallar($$UPDATE tramites SET estado_tramite = 'ARCHIVADO', a
 UPDATE tramites SET estado_tramite = 'ARCHIVADO', actualizado_por = 901 WHERE id = '00000000-0000-0000-0000-000000000001';
 SELECT pg_temp.verificar((SELECT estado_tramite = 'ARCHIVADO' FROM tramites WHERE id = '00000000-0000-0000-0000-000000000001'),
                          'el jefe archiva un tramite concluido');
+SELECT pg_temp.debe_fallar($$UPDATE tramites SET estado_tramite = 'CONCLUIDO', actualizado_por = 904
+    WHERE id = '00000000-0000-0000-0000-000000000001'$$, 'No tiene permiso para desarchivar');
 
 -- ---------- 6. Busqueda (sin tildes, incluye el texto del informe activo) ----------
 UPDATE informes SET texto_extraido = 'Conclusión: procede la ampliación de plazo conforme al Decreto Supremo 0181.'
@@ -151,6 +175,8 @@ SELECT pg_temp.verificar((SELECT count(*) >= 1 FROM tramites_similares('00000000
 SELECT pg_temp.debe_fallar($$INSERT INTO precedentes (tramite_id, tramite_precedente_id, criterio_legal, relevancia, creado_por)
     VALUES ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000002', 'x', 'VINCULANTE', 902)$$,
     'ck_precedentes_distintos');
+SELECT pg_temp.debe_fallar($$UPDATE precedentes SET criterio_legal = 'otro', actualizado_por = 904
+    WHERE tramite_id = '00000000-0000-0000-0000-000000000002'$$, 'No tiene permiso para registrar precedentes');
 
 -- ---------- 9. Tablero ----------
 SELECT pg_temp.verificar((SELECT concluidos = 1 FROM v_tablero_por_abogado WHERE abogado = 'DRA. ZENTENO'),
@@ -159,12 +185,23 @@ SELECT pg_temp.verificar((SELECT concluidos = 1 FROM v_tablero_por_abogado WHERE
 -- ---------- 10. Auditoria inmutable y permisos de la cuenta de la aplicacion ----------
 SELECT pg_temp.debe_fallar($$UPDATE auditoria SET accion = 'X'$$, 'no puede modificarse');
 SELECT pg_temp.debe_fallar($$DELETE FROM auditoria$$, 'no puede modificarse');
+SELECT pg_temp.debe_fallar($$TRUNCATE auditoria$$, 'no puede modificarse');
 SET LOCAL ROLE scsl_app;
 SELECT pg_temp.debe_fallar($$DELETE FROM auditoria$$, 'permission denied');
 SELECT pg_temp.debe_fallar($$DELETE FROM tramites$$, 'permission denied');
 SELECT pg_temp.debe_fallar($$DROP TABLE prompts$$, 'must be owner');
+SELECT pg_temp.debe_fallar($$INSERT INTO roles_permisos SELECT r.id, p.id FROM roles r, permisos p
+    WHERE r.nombre = 'SECRETARIA' AND p.codigo = 'ARCHIVAR_TRAMITE'$$, 'permission denied');
+SELECT pg_temp.debe_fallar($$SELECT reindexar_tramites()$$, 'permission denied');
+SET LOCAL scsl.mantenimiento = 'on';
+SELECT pg_temp.debe_fallar($$UPDATE tramites SET estado_tramite = 'ARCHIVADO', actualizado_por = 904
+    WHERE id = '00000000-0000-0000-0000-000000000002'$$, 'Solo se archiva un tramite concluido');
+SET LOCAL scsl.mantenimiento = 'off';
 SELECT pg_temp.verificar((SELECT count(*) = 4 FROM roles), 'la aplicacion puede leer los datos');
 RESET ROLE;
+SELECT pg_temp.verificar(NOT has_database_privilege('public', current_database(), 'CONNECT')
+                     AND NOT has_function_privilege('public', 'unificar_catalogo(text,int,int)', 'EXECUTE'),
+                         'PUBLIC no se conecta ni ejecuta funciones');
 
 DO $$ BEGIN RAISE NOTICE '=== TODAS LAS PRUEBAS PASARON ==='; END $$;
 ROLLBACK;
