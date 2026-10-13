@@ -155,6 +155,59 @@ def main():
     roles = esperar(200, pedir('GET', '/roles', sec), 'lista de roles')
     ok(len(roles) == 4, 'cuatro roles')
 
+    # ---------- Alta masiva de usuarios ----------
+    lote = [f'lote1.{SUFIJO}@prueba.gob.bo', f'lote2.{SUFIJO}@prueba.gob.bo']
+    lista_csv = ('\ufeffNombre;Correo electrónico;Cargo;Rol\r\n'
+                 f'Ana Lote {SUFIJO};{lote[0].upper()};Abogada;abogada\r\n'
+                 f'Beto Lote {SUFIJO};{lote[1]};;Secretaria\r\n'
+                 f'Repetido {SUFIJO};{cuentas["JEFE"]["correo"]};;Jefe\r\n'
+                 f'Rol Malo {SUFIJO};malo.{SUFIJO}@prueba.gob.bo;;Gerente\r\n'
+                 f'Doble {SUFIJO};{lote[1]};;Jefe\r\n'
+                 ';;;\r\n').encode('utf-8')
+    csv_archivo = {'archivo': ('usuarios.csv', lista_csv, 'text/csv')}
+    esperar(403, pedir('POST', '/usuarios/importar', sec, archivos=csv_archivo, campos={'confirmar': 'no'}),
+            'sin GESTIONAR_USUARIOS no importa usuarios')
+    esperar(422, pedir('POST', '/usuarios/importar', admin, archivos={'archivo': ('x.pdf', b'%PDF-1.4', 'application/pdf')},
+                       campos={'confirmar': 'no'}), 'rechaza formatos que no son Excel ni CSV')
+    rev = esperar(200, pedir('POST', '/usuarios/importar', admin, archivos=csv_archivo, campos={'confirmar': 'no'}),
+                  'revisa la lista')
+    errores_lista = {f['fila']: f['error'] for f in rev['filas']}
+    ok(rev['validas'] == 2 and rev['con_error'] == 3 and rev['creados'] == 0 and len(rev['filas']) == 5
+       and errores_lista[2] is None and 'Ya existe' in errores_lista[4] and 'Rol' in errores_lista[5]
+       and 'repetido' in errores_lista[6], 'marca las filas con error y no crea nada', rev)
+    ok(not any(x['correo'] in lote for x in esperar(200, pedir('GET', '/usuarios', admin), 'lista tras revisar')),
+       'revisar no crea cuentas')
+    hecho = esperar(200, pedir('POST', '/usuarios/importar', admin, archivos=csv_archivo, campos={'confirmar': 'si'}),
+                    'crea las filas validas')
+    ok(hecho['creados'] == 2, 'crea solo las validas', hecho)
+    creados = {x['correo']: x for x in esperar(200, pedir('GET', '/usuarios', admin), 'lista tras crear') if x['correo'] in lote}
+    ok(creados.get(lote[0], {}).get('rol') == 'ABOGADO' and creados.get(lote[1], {}).get('rol') == 'SECRETARIA'
+       and not any(x['correo_verificado'] for x in creados.values()), 'roles reconocidos y cuentas por activar', creados)
+    esperar(204, pedir('POST', '/auth/activar', cuerpo={'correo': lote[0], 'codigo': codigo_del_log(lote[0]), 'clave': CLAVE}),
+            'activa una cuenta del lote')
+    ingresar(lote[0], CLAVE)
+    try:
+        from openpyxl import Workbook
+    except ImportError:
+        Workbook = None
+        print('aviso: instale openpyxl para probar la lista de usuarios en Excel')
+    if Workbook:
+        libro = Workbook()
+        libro.active.append(['NOMBRES Y APELLIDOS', 'EMAIL', 'ROL'])
+        libro.active.append([f'Excel Lote {SUFIJO}', f'excel.{SUFIJO}@prueba.gob.bo', 'JEFE'])
+        salida = io.BytesIO()
+        libro.save(salida)
+        rx = esperar(200, pedir('POST', '/usuarios/importar', admin, campos={'confirmar': 'no'}, archivos={'archivo': (
+            'usuarios.xlsx', salida.getvalue(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')}),
+            'revisa una lista en Excel')
+        ok(rx['validas'] == 1 and rx['filas'][0]['rol'] == 'JEFE', 'lee el Excel con otros titulos', rx)
+    esperar(403, pedir('POST', '/usuarios/reenviar-activacion-pendientes', sec), 'sin permiso no reenvia en lote')
+    r = esperar(200, pedir('POST', '/usuarios/reenviar-activacion-pendientes', admin), 'reenvia a los pendientes')
+    ok(r['enviados'] >= 1, 'hay pendientes a quienes reenviar', r)
+    nuevo_codigo = codigo_del_log(lote[1])
+    esperar(204, pedir('POST', '/auth/activar', cuerpo={'correo': lote[1], 'codigo': nuevo_codigo, 'clave': CLAVE}),
+            'el codigo reenviado activa la cuenta')
+
     # ---------- Catalogos ----------
     procedencia = esperar(200, pedir('GET', '/catalogos/procedencias', sec), 'procedencias')[0]
     entidad = esperar(200, pedir('POST', '/catalogos/entidades', sec, {'nombre': f'Gobierno Autónomo Prueba {SUFIJO}'}),

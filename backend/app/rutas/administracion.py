@@ -2,9 +2,9 @@
 import re
 import secrets
 
-from fastapi import APIRouter, Body, Depends, Response
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, Response, UploadFile
 
-from .. import config
+from .. import config, lista_usuarios
 from ..bd import conexion, todos, uno, valor
 from ..correo import avisar, emitir_codigo
 from ..errores import ErrorApi, validar
@@ -53,17 +53,53 @@ def crear_usuario(d: dict = Body(...), u: Usuario = Depends(requiere('GESTIONAR_
     if d.get('rol') not in ROLES:
         campos['rol'] = 'Elija un rol.'
     validar(campos)
+    nuevo = _crear(con, u, nombre, correo, d.get('cargo'), d['rol'])
+    return usuario_publico(con, nuevo)
+
+
+def _crear(con, u: Usuario, nombre, correo, cargo, rol, tareas=None):
+    """Crea la cuenta ya validada y envía su código de activación."""
     # La clave inicial es aleatoria e inutilizable: la persona fija la suya al activar la cuenta.
     nuevo = valor(con, '''INSERT INTO usuarios (nombre_completo, correo, cargo, rol_id, hash_contrasena)
                           SELECT %s, %s, %s, r.id, crypt(%s, gen_salt('bf', 8)) FROM roles r WHERE r.nombre = %s
                           RETURNING id''',
-                  (nombre[:150], correo, (d.get('cargo') or '').strip()[:120] or None, secrets.token_urlsafe(32),
-                   d['rol']))
-    if d['rol'] == 'ABOGADO':
+                  (nombre[:150], correo, (cargo or '').strip()[:120] or None, secrets.token_urlsafe(32), rol))
+    if rol == 'ABOGADO':
         _vincular_profesional(con, nuevo, nombre)
-    emitir_codigo(con, nuevo, correo, 'ACTIVACION')
-    auditar(con, u, 'CREAR_USUARIO', 'USUARIOS', 'usuario', nuevo, detalle={'correo': correo, 'rol': d['rol']})
-    return usuario_publico(con, nuevo)
+    emitir_codigo(con, nuevo, correo, 'ACTIVACION', tareas=tareas)
+    auditar(con, u, 'CREAR_USUARIO', 'USUARIOS', 'usuario', nuevo, detalle={'correo': correo, 'rol': rol})
+    return nuevo
+
+
+@rutas.post('/usuarios/importar')
+def importar_usuarios(tareas: BackgroundTasks, archivo: UploadFile | None = File(None), confirmar: str = Form('no'),
+                      u: Usuario = Depends(requiere('GESTIONAR_USUARIOS')), con=Depends(conexion)):
+    """Alta masiva desde Excel o CSV. confirmar=no: solo revisa la lista. confirmar=si: crea las filas
+    sin errores (las demás se informan) y cada persona recibe su enlace de activación."""
+    contenido = archivo.file.read(lista_usuarios.MAX_BYTES + 1) if archivo else b''
+    filas = lista_usuarios.revisar(con, lista_usuarios.leer(archivo.filename if archivo else '', contenido))
+    validas = [f for f in filas if not f['error']]
+    creados = 0
+    if confirmar == 'si':
+        if not validas:
+            raise ErrorApi('Ninguna fila se puede crear: corrija la lista.', 422)
+        for f in validas:
+            _crear(con, u, f['nombre_completo'], f['correo'], f['cargo'], f['rol'], tareas)
+        creados = len(validas)
+        auditar(con, u, 'IMPORTAR_USUARIOS', 'USUARIOS',
+                detalle={'archivo': archivo.filename, 'creados': creados, 'con_error': len(filas) - creados})
+    return {'filas': filas, 'validas': len(validas), 'con_error': len(filas) - len(validas), 'creados': creados}
+
+
+@rutas.post('/usuarios/reenviar-activacion-pendientes')
+def reenviar_activacion_pendientes(tareas: BackgroundTasks, u: Usuario = Depends(requiere('GESTIONAR_USUARIOS')),
+                                   con=Depends(conexion)):
+    """Un código nuevo para cada cuenta activa que aún no se activó (los anteriores quedan anulados)."""
+    pendientes = todos(con, 'SELECT id, correo FROM usuarios WHERE activo AND NOT correo_verificado ORDER BY id')
+    for p in pendientes:
+        emitir_codigo(con, p['id'], p['correo'], 'ACTIVACION', tareas=tareas)
+    auditar(con, u, 'REENVIAR_ACTIVACION', 'USUARIOS', detalle={'cantidad': len(pendientes), 'masivo': True})
+    return {'enviados': len(pendientes)}
 
 
 @rutas.put('/usuarios/{id_}')

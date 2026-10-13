@@ -74,6 +74,7 @@ services:
       SMTP_CLAVE: ${SMTP_CLAVE:-}
       SMTP_REMITENTE: ${SMTP_REMITENTE:-}
       SMTP_TLS: ${SMTP_TLS:-si}
+      URL_SISTEMA: ${URL_SISTEMA:-http://localhost:${WEB_PUERTO:-8080}}
       TZ: America/La_Paz
     volumes:
       - scsl_archivos:/datos                             # informes PDF y Excel en analisis

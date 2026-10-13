@@ -26,6 +26,8 @@ export const ETIQUETAS_ACCIONES = {
   ABRIR_FUENTE_EXTERNA: 'Apertura de sitio legal externo',
   ABRIR_ASISTENTE_IA: 'Apertura de asistente de IA externo',
   CREAR_USUARIO: 'Alta de usuario',
+  IMPORTAR_USUARIOS: 'Alta masiva de usuarios',
+  REENVIAR_ACTIVACION: 'Reenvío de activación',
   EDITAR_USUARIO: 'Edición de usuario',
   IMPORTAR_EXCEL: 'Importación de Excel',
   EDITAR_CONFIGURACION: 'Cambio de configuración',

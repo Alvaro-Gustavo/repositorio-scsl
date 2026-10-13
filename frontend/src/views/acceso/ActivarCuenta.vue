@@ -1,5 +1,7 @@
 <script setup>
 // Activacion de cuenta: correo + codigo de 6 digitos recibido por correo + nueva contrasena.
+// El enlace del correo trae ambos despues de "#" (/activar#correo=...&codigo=...): no viajan al
+// servidor ni quedan en sus registros; al leerlos se borran de la barra de direcciones.
 import { ref } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
 import { CheckCircle2, LoaderCircle, Info } from '@lucide/vue'
@@ -10,9 +12,12 @@ import { MODO, api } from '@/api'
 import { useEnvio } from '@/composables/utiles'
 
 const route = useRoute()
+const delEnlace = new URLSearchParams(window.location.hash.slice(1))
+const codigoDelEnlace = /^\d{6}$/.test(delEnlace.get('codigo') || '') ? delEnlace.get('codigo') : ''
+if (window.location.hash) history.replaceState(history.state, '', window.location.pathname + window.location.search)
 const form = ref({
-  correo: typeof route.query.correo === 'string' ? route.query.correo : '',
-  codigo: '',
+  correo: delEnlace.get('correo') || (typeof route.query.correo === 'string' ? route.query.correo : ''),
+  codigo: codigoDelEnlace,
   clave: '',
   confirmacion: ''
 })
@@ -37,6 +42,7 @@ const soloDigitos = (v) => v.replace(/\D/g, '').slice(0, 6)
   <MarcoAcceso v-if="!listo" titulo="Activar mi cuenta" subtitulo="Ingrese el código que recibió en su correo institucional y elija su contraseña.">
     <form class="formulario" novalidate @submit.prevent="activar">
       <p v-if="MODO === 'simulado'" class="mensaje mensaje-info"><Info aria-hidden="true" /> En demostración el código es 123456.</p>
+      <p v-else-if="codigoDelEnlace" class="mensaje mensaje-info"><Info aria-hidden="true" /> Su correo y su código ya están cargados: solo elija su contraseña.</p>
 
       <div class="campo">
         <label for="correo">Correo</label>

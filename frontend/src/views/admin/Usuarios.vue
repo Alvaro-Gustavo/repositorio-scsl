@@ -1,14 +1,16 @@
 <script setup>
 // Administración de usuarios: alta, edición, activación y matriz de permisos por rol.
 import { ref, computed } from 'vue'
-import { UserPlus, Pencil, Power, Mail, Search, Users, Check, Info } from '@lucide/vue'
+import { UserPlus, Pencil, Power, Mail, Search, Users, Check, Info, FileSpreadsheet, MailPlus } from '@lucide/vue'
 import { api } from '@/api'
 import { useCarga, useEnvio } from '@/composables/utiles'
 import { useSesion } from '@/stores/sesion'
 import { ROLES } from '@/utils/constantes'
-import { formatoFechaHora } from '@/utils/formato'
+import { formatoFechaHora, plural } from '@/utils/formato'
+import { useAvisos } from '@/stores/avisos'
 import { GRUPOS_PERMISOS, etiquetaPermiso } from '@/components/admin/etiquetasPermisos'
 import Modal from '@/components/ui/Modal.vue'
+import ImportarUsuarios from '@/components/admin/ImportarUsuarios.vue'
 import Cargando from '@/components/ui/Cargando.vue'
 import EstadoVacio from '@/components/ui/EstadoVacio.vue'
 
@@ -101,6 +103,20 @@ async function reenviar(u) {
   } catch { /* mensaje ya mostrado */ } finally { reenviando.value = null }
 }
 
+// ---------- Alta masiva y reenvío a todos los pendientes ----------
+const importarAbierto = ref(false)
+const pendientes = computed(() => (usuarios.value || []).filter((u) => u.activo && !u.correo_verificado))
+const reenvioMasivoAbierto = ref(false)
+const envioMasivo = useEnvio()
+const avisos = useAvisos()
+async function reenviarPendientes() {
+  try {
+    const r = await envioMasivo.enviar(() => api.usuarios.reenviarActivacionPendientes())
+    avisos.exito(`Se enviaron ${plural(r.enviados, 'código nuevo', 'códigos nuevos')} de activación`)
+    reenvioMasivoAbierto.value = false
+  } catch { /* mensaje ya mostrado */ }
+}
+
 // ---------- Matriz ----------
 const grupos = computed(() => {
   const todos = new Set((roles.value || []).flatMap((r) => r.permisos))
@@ -121,6 +137,10 @@ const tiene = (rol, permiso) => rol.permisos.includes(permiso)
         <p>Cree cuentas, asigne el rol de cada persona y active o desactive su acceso al repositorio.</p>
       </div>
       <div class="pagina-acciones">
+        <button v-if="pendientes.length" type="button" class="boton" @click="reenvioMasivoAbierto = true">
+          <MailPlus aria-hidden="true" /> Reenviar a pendientes ({{ pendientes.length }})
+        </button>
+        <button type="button" class="boton" @click="importarAbierto = true"><FileSpreadsheet aria-hidden="true" /> Importar usuarios</button>
         <button type="button" class="boton boton-primario" @click="abrirAlta"><UserPlus aria-hidden="true" /> Nuevo usuario</button>
       </div>
     </header>
@@ -329,6 +349,25 @@ const tiene = (rol, permiso) => rol.permisos.includes(permiso)
       </template>
     </Modal>
 
+    <!-- Alta masiva -->
+    <ImportarUsuarios v-model="importarAbierto" @creados="cargar" />
+
+    <!-- Reenvío a todos los pendientes -->
+    <Modal v-model="reenvioMasivoAbierto" titulo="Reenviar activación a pendientes" ancho="520px">
+      <p>
+        Se enviará un código nuevo (con su enlace) a las <strong>{{ plural(pendientes.length, 'cuenta', 'cuentas') }}</strong> que aún no se activaron.
+        Los códigos enviados antes dejan de servir.
+      </p>
+      <ul class="lista-pendientes texto-pequeno">
+        <li v-for="u in pendientes.slice(0, 8)" :key="u.id">{{ u.nombre_completo }} · {{ u.correo }}</li>
+        <li v-if="pendientes.length > 8" class="texto-3">y {{ pendientes.length - 8 }} más</li>
+      </ul>
+      <template #pie>
+        <button type="button" class="boton" @click="reenvioMasivoAbierto = false">Cancelar</button>
+        <button type="button" class="boton boton-primario" :disabled="envioMasivo.enviando.value" @click="reenviarPendientes"><MailPlus aria-hidden="true" /> Reenviar</button>
+      </template>
+    </Modal>
+
     <!-- Activar / desactivar -->
     <Modal v-model="cambioAbierto" :titulo="cambio?.activo ? 'Desactivar usuario' : 'Activar usuario'" ancho="480px">
       <template v-if="cambio">
@@ -350,6 +389,7 @@ const tiene = (rol, permiso) => rol.permisos.includes(permiso)
 </template>
 
 <style scoped>
+.lista-pendientes { margin: var(--e-3) 0 0; padding-left: 20px; color: var(--texto-2); }
 .aviso-alta { margin-bottom: var(--e-4); }
 .filtros { justify-content: flex-start; flex-wrap: wrap; }
 .campo-buscar { flex: 1 1 260px; }

@@ -24,6 +24,11 @@ CARPETA_DATOS = _texto('APP_CARPETA_DATOS', '/datos')
 # Duracion maxima de una sesion, aunque haya actividad (horas).
 SESION_MAXIMA_HORAS = int(_texto('APP_SESION_MAXIMA_HORAS', '12'))
 
+# Direccion con la que los usuarios abren el sistema (ej. http://scsl.contraloria.local). Se usa en
+# los enlaces de los correos; viene de la configuracion, nunca de la peticion (el encabezado Host
+# lo controla quien envia la peticion y podria desviar el enlace a otro sitio).
+URL_SISTEMA = (_texto('URL_SISTEMA', '') or '').rstrip('/')
+
 # Correo para enviar codigos de activacion y recuperacion. Sin SMTP_HOST,
 # el codigo se escribe en el log del contenedor (docker compose logs app).
 SMTP_HOST = _texto('SMTP_HOST', '')

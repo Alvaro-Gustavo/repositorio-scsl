@@ -4,6 +4,7 @@ import logging
 import secrets
 import smtplib
 from email.message import EmailMessage
+from urllib.parse import quote
 
 from . import config
 from .bd import uno
@@ -39,9 +40,11 @@ def avisar(destino, asunto, texto):
         log.error('No se pudo enviar el aviso "%s" a %s: %s', asunto, destino, e)
 
 
-def emitir_codigo(con, usuario_id, correo, proposito, dato=None):
+def emitir_codigo(con, usuario_id, correo, proposito, dato=None, tareas=None):
     """Anula los codigos anteriores, crea uno nuevo y lo envia a `correo`.
-    dato: para CAMBIO_CORREO, la direccion nueva que se confirma con el codigo."""
+    dato: para CAMBIO_CORREO, la direccion nueva que se confirma con el codigo.
+    tareas: BackgroundTasks de FastAPI para enviar despues de responder (envios masivos); un
+    fallo de envio queda en el log y no deshace la operacion."""
     codigo = f'{secrets.randbelow(10**6):06d}'
     con.execute('''UPDATE codigos_verificacion SET usado_en = now()
                     WHERE usuario_id = %s AND proposito = %s AND usado_en IS NULL''', (usuario_id, proposito))
@@ -53,9 +56,13 @@ def emitir_codigo(con, usuario_id, correo, proposito, dato=None):
         return
     if proposito == 'ACTIVACION':
         asunto = f'{config.NOMBRE_SISTEMA}: active su cuenta'
-        texto = (f'Se creó su cuenta en el {config.NOMBRE_SISTEMA}.\n\n'
-                 f'Código de activación: {codigo}\n\nVence en 24 horas. Ingrese a la página "Activar cuenta" '
-                 f'con su correo, este código y la contraseña que elija.')
+        texto = f'Se creó su cuenta en el {config.NOMBRE_SISTEMA}.\n\n'
+        if config.URL_SISTEMA:
+            # El codigo va despues de "#": el navegador no lo envia al servidor ni queda en sus registros.
+            enlace = f'{config.URL_SISTEMA}/activar#correo={quote(correo)}&codigo={codigo}'
+            texto += f'Para activarla abra este enlace y elija su contraseña:\n{enlace}\n\n'
+        texto += (f'Código de activación: {codigo}\n\nVence en 24 horas. También puede ingresar a la página '
+                  f'"Activar cuenta" con su correo, este código y la contraseña que elija.')
     elif proposito == 'CAMBIO_CORREO':
         asunto = f'{config.NOMBRE_SISTEMA}: confirme su nuevo correo'
         texto = (f'Se pidió usar esta dirección como correo de su cuenta en el {config.NOMBRE_SISTEMA}.\n\n'
@@ -65,7 +72,10 @@ def emitir_codigo(con, usuario_id, correo, proposito, dato=None):
         asunto = f'{config.NOMBRE_SISTEMA}: recuperar contraseña'
         texto = (f'Código para restablecer su contraseña: {codigo}\n\nVence en 30 minutos. '
                  f'Si usted no lo pidió, ignore este mensaje.')
-    enviar(correo, asunto, texto)
+    if tareas is not None:
+        tareas.add_task(avisar, correo, asunto, texto)
+    else:
+        enviar(correo, asunto, texto)
 
 
 def verificar_codigo(con, usuario_id, proposito, codigo):

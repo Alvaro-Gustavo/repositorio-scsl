@@ -778,6 +778,50 @@ export const api = {
       return usuarioPublico(u)
     }),
     reenviarActivacion: (id) => op(() => { requiere('GESTIONAR_USUARIOS'); return { enviado_a: bd.usuarios.find((u) => u.id === id)?.correo } }),
+    // En demostración solo se lee CSV (el Excel lo interpreta el backend real).
+    importar: async (archivo, confirmar) => {
+      if (!/\.(csv|txt)$/i.test(archivo?.name || '')) throw new ErrorApi('En demostración use un archivo CSV (la plantilla).', 422, { archivo: 'Use un CSV.' })
+      const texto = (await archivo.text()).replace(/^\uFEFF/, '')
+      return op(() => {
+        const u = requiere('GESTIONAR_USUARIOS')
+        const lineas = texto.split(/\r?\n/).filter((l) => l.trim())
+        const sep = lineas[0]?.includes(';') ? ';' : ','
+        const titulos = (lineas[0] || '').split(sep).map((t) => normalizar(t))
+        const col = (...nombres) => titulos.findIndex((t) => nombres.includes(t))
+        const [iN, iC, iCa, iR] = [col('nombre', 'nombre completo'), col('correo', 'email'), col('cargo'), col('rol')]
+        if (iN < 0 || iC < 0 || iR < 0) throw new ErrorApi('Faltan columnas: la lista debe tener Nombre, Correo y Rol.', 422)
+        const roles = { administrador: 'ADMIN', admin: 'ADMIN', jefe: 'JEFE', jefa: 'JEFE', abogado: 'ABOGADO', abogada: 'ABOGADO', secretaria: 'SECRETARIA', secretario: 'SECRETARIA' }
+        const vistos = new Set()
+        const filas = lineas.slice(1).map((l, i) => {
+          const c = l.split(sep).map((x) => x.trim())
+          const f = { fila: i + 2, nombre_completo: c[iN] || '', correo: (c[iC] || '').toLowerCase(), cargo: iCa >= 0 ? c[iCa] || '' : '', rol: roles[normalizar(c[iR])] || null }
+          if (!f.nombre_completo) f.error = 'Falta el nombre.'
+          else if (vistos.has(f.correo)) f.error = 'El correo está repetido en la lista.'
+          else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.correo)) f.error = 'Ingrese un correo válido.'
+          else if (bd.usuarios.some((x) => x.correo.toLowerCase() === f.correo)) f.error = 'Ya existe un usuario con ese correo.'
+          else if (!f.rol) f.error = 'Rol no reconocido: use Administrador, Jefe, Abogado o Secretaria.'
+          else f.error = null
+          vistos.add(f.correo)
+          return f
+        })
+        const validas = filas.filter((f) => !f.error)
+        if (confirmar) {
+          if (!validas.length) throw new ErrorApi('Ninguna fila se puede crear: corrija la lista.', 422)
+          validas.forEach((f) => {
+            const nuevo = { id: ++bd.secuencia, nombre_completo: f.nombre_completo, correo: f.correo, cargo: f.cargo || null, rol: f.rol, clave: CLAVE_DEMO,
+              activo: true, correo_verificado: false, debe_cambiar_contrasena: true, totp_activo: false, ultimo_acceso: null, creado_en: ahora() }
+            bd.usuarios.push(nuevo)
+            auditar('CREAR_USUARIO', 'USUARIOS', 'usuario', nuevo.id, 'EXITOSO', { correo: nuevo.correo, rol: nuevo.rol })
+          })
+          auditar('IMPORTAR_USUARIOS', 'USUARIOS', null, null, 'EXITOSO', { archivo: archivo.name, creados: validas.length, por: u.correo })
+        }
+        return { filas, validas: validas.length, con_error: filas.length - validas.length, creados: confirmar ? validas.length : 0 }
+      })
+    },
+    reenviarActivacionPendientes: () => op(() => {
+      requiere('GESTIONAR_USUARIOS')
+      return { enviados: bd.usuarios.filter((u) => u.activo && !u.correo_verificado).length }
+    }),
     roles: () => op(() => { yo(); return ROLES_DEMO })
   },
 

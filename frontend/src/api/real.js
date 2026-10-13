@@ -175,6 +175,16 @@ export const api = {
     actualizar: (id, datos) => put(`/usuarios/${id}`, datos),
     activar: (id, activo) => patch(`/usuarios/${id}/activo`, { activo }),
     reenviarActivacion: (id) => post(`/usuarios/${id}/reenviar-activacion`),
+    // POST /usuarios/importar multipart archivo (.xlsx/.csv), confirmar=si|no
+    //   -> {filas: [{fila, nombre_completo, correo, cargo, rol, error}], validas, con_error, creados}
+    importar: (archivo, confirmar) => {
+      const f = new FormData()
+      f.set('archivo', archivo)
+      f.set('confirmar', confirmar ? 'si' : 'no')
+      return pedir('POST', '/usuarios/importar', { formulario: f })
+    },
+    // POST /usuarios/reenviar-activacion-pendientes -> {enviados}
+    reenviarActivacionPendientes: () => post('/usuarios/reenviar-activacion-pendientes'),
     // GET /roles -> [{nombre, descripcion, permisos[]}]
     roles: () => get('/roles')
   },

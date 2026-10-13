@@ -15,6 +15,13 @@ services:
       - "127.0.0.1:5434:5432"
   app:
     container_name: scsl_prueba_app
+    environment:
+      # Nunca enviar correos reales desde las pruebas (las cuentas de prueba no existen):
+      # sin SMTP, el codigo queda en el log y prueba_api.py lo lee de ahi.
+      SMTP_HOST: ""
+      SMTP_USUARIO: ""
+      SMTP_CLAVE: ""
+      URL_SISTEMA: http://localhost:8081
   web:
     container_name: scsl_prueba_web
     ports: !override
