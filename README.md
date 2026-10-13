@@ -5,8 +5,12 @@ Subcontraloría de Servicios Legales • Repositorio Local Cerrado
 Sistema web local para registrar, asignar, concluir y consultar los trámites legales de la Subcontraloría,
 con sus informes PDF, precedentes y un catálogo de prompts para que cada doctor trabaje con su propia IA.
 
-Esta guía cubre la **fase 1: base de datos con Docker**. Las fases siguientes (aplicación y servidor web) se
-agregan al mismo `docker-compose.yml`.
+Todo corre con Docker en tres contenedores: base de datos (`bd`), backend (`app`) e interfaz web (`web`).
+
+| Documento | Contenido |
+| --- | --- |
+| [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md) | Tecnologías, dependencias, arquitectura y cómo se relacionan `bd/`, `backend/` y `frontend/` |
+| [docs/DESPLIEGUE_SERVIDOR.md](docs/DESPLIEGUE_SERVIDOR.md) | Guía para montar el sistema en un servidor de la red interna |
 
 ---
 
@@ -14,9 +18,14 @@ agregan al mismo `docker-compose.yml`.
 
 ```
 repositorio-scsl/
-├── docker-compose.yml        Define los contenedores (hoy: la base de datos)
+├── docker-compose.yml        Define los contenedores: bd, app, web (y pgadmin opcional)
+├── docker-compose.prueba.yml Copia aislada para pruebas (puerto 8081, sin tocar los datos reales)
 ├── .env.ejemplo              Plantilla de claves; se copia como .env
 ├── .gitignore / .gitattributes
+├── backend/                  API en Python (FastAPI): sección 8
+├── docs/                     Arquitectura y guía de despliegue en servidor
+├── scripts/respaldo.sh       Respaldo de la base y los PDF (para programar con cron)
+├── frontend/                 Interfaz web en Vue 3: ver frontend/README.md
 └── bd/
     ├── init/                 Se ejecuta UNA vez, al crear la base
     │   ├── 01_extensiones.sql      Extensiones y búsqueda en español sin tildes
@@ -24,7 +33,8 @@ repositorio-scsl/
     │   ├── 03_reglas.sql           Reglas de negocio (triggers y funciones)
     │   ├── 04_vistas.sql           Consultas guardadas: tablero, pendientes, prompts
     │   ├── 05_datos_iniciales.sql  Roles, permisos, procedencias, fuentes, configuración
-    │   └── 06_seguridad.sh         Cuenta de la aplicación y primer administrador
+    │   ├── 06_seguridad.sh         Cuenta de la aplicación y primer administrador
+    │   └── 07_notificaciones.sh    Avisos al abogado cuando se le asigna un trámite
     ├── pruebas/prueba_reglas.sql   Prueba de todas las reglas (no deja datos)
     └── respaldos/                  Aquí se guardan los respaldos
 ```
@@ -64,14 +74,17 @@ Abra `.env` y cambie **todas** las claves:
 | `BD_PUERTO` | Puerto en el equipo (5433, para no chocar con un PostgreSQL ya instalado) |
 | `APP_BD_USUARIO` / `APP_BD_CLAVE` | Cuenta con la que se conectará la aplicación, con permisos limitados |
 | `ADMIN_NOMBRE` / `ADMIN_CORREO` / `ADMIN_CLAVE` | Primer usuario ADMIN del sistema; debe cambiar la clave al ingresar |
+| `APP_SECRETO` | Clave larga y aleatoria con la que el backend cifra el segundo factor (2FA) |
+| `SMTP_*` | Servidor de correo para enviar códigos de activación y recuperación. Vacío: el código sale en `docker compose logs app` |
+| `WEB_PUERTO` / `FRONTEND_MODO` | Puerto de la interfaz (8080) y modo `real` (con backend) o `simulado` (demostración) |
 
 **Por qué dos cuentas:** si alguien vulnerara la aplicación, su cuenta no puede borrar tablas, ni la
 auditoría, ni trámites. Principio de mínimo privilegio.
 
-### Paso 3 — Crear la base
+### Paso 3 — Crear la base y levantar el sistema
 
 ```powershell
-docker compose up -d
+docker compose up -d --build
 docker compose logs -f bd
 ```
 
@@ -83,7 +96,7 @@ Salga de los logs con `Ctrl + C` (el contenedor sigue funcionando).
 1. Docker descarga la imagen oficial `postgres:16`.
 2. Crea el contenedor `scsl_bd` y el volumen `scsl_datos` (donde viven los datos).
 3. Como el volumen está vacío, PostgreSQL crea la base `repositorio_scsl` y ejecuta, en orden, los archivos
-   de `bd/init/` (01 → 06).
+   de `bd/init/` (01 → 07).
 4. La próxima vez que se inicie, el volumen ya tiene datos y **no** vuelve a ejecutar esos archivos.
 
 ### Paso 4 — Comprobar que quedó bien
@@ -93,7 +106,9 @@ docker compose ps                                   # estado "healthy"
 docker exec -it scsl_bd psql -U postgres -d repositorio_scsl -c "SELECT nombre FROM roles ORDER BY id;"
 ```
 
-Debe listar `ADMIN, JEFE, ABOGADO, SECRETARIA`.
+Debe listar `ADMIN, JEFE, ABOGADO, SECRETARIA`. Los tres contenedores deben estar `healthy`.
+
+Abra `http://localhost:8080` e ingrese con `ADMIN_CORREO` y `ADMIN_CLAVE`: el sistema le pedirá cambiar la clave.
 
 ### Paso 5 — Probar las reglas de negocio
 
@@ -192,14 +207,17 @@ SELECT unificar_catalogo('entidades', 12, 47);
 | --- | --- |
 | Iniciar / detener | `docker compose up -d` / `docker compose stop` |
 | Ver estado y logs | `docker compose ps` / `docker compose logs -f bd` |
-| Respaldo | `docker exec scsl_bd pg_dump -U postgres -Fc -d repositorio_scsl -f /respaldos/scsl_AAAA-MM-DD.dump` |
+| Respaldo completo (base + PDF) | `bash scripts/respaldo.sh` |
+| Respaldo de la base | `docker exec scsl_bd pg_dump -U postgres -Fc -d repositorio_scsl -f /respaldos/scsl_AAAA-MM-DD.dump` |
+| Respaldo de los PDF | `docker run --rm -v scsl_archivos:/datos -v ${PWD}/bd/respaldos:/r alpine tar czf /r/archivos_AAAA-MM-DD.tgz -C /datos .` |
+| Ver códigos de activación (sin SMTP) | `docker compose logs app \| Select-String Código` (Linux: `\| grep Código`) |
 | Restaurar | `docker exec scsl_bd pg_restore -U postgres -d repositorio_scsl --clean --if-exists /respaldos/<archivo>.dump` |
 | Consola SQL | `docker exec -it scsl_bd psql -U postgres -d repositorio_scsl` |
 
-Los respaldos quedan en `bd/respaldos/` del equipo. Cópielos también fuera del servidor.
+Los respaldos quedan en `bd/respaldos/` del equipo. Cópielos también fuera del servidor. **Respalde siempre la base y los PDF juntos:** la base guarda la ruta y la huella de cada informe, el volumen `scsl_archivos` guarda el archivo.
 
 **Cuidado:** `docker compose down` detiene y quita el contenedor, pero conserva los datos.
-`docker compose down -v` **borra el volumen con todos los datos**. Úselo solo en desarrollo, para empezar de cero.
+`docker compose down -v` **borra los volúmenes con todos los datos y los PDF**. Úselo solo en desarrollo, para empezar de cero.
 
 ## 7. Problemas frecuentes
 
@@ -209,9 +227,44 @@ Los respaldos quedan en `bd/respaldos/` del equipo. Cópielos también fuera del
 | `port is already allocated` | El puerto 5433 está en uso. Cambie `BD_PUERTO` en `.env` |
 | `06_seguridad.sh: bad interpreter` o `\r: command not found` | El `.sh` tiene finales de línea de Windows (CRLF). Guárdelo con LF (VS Code: esquina inferior derecha) |
 | Cambié un archivo de `bd/init` y no se aplica | Solo corren al crear la base. En desarrollo: `docker compose down -v` y `docker compose up -d` |
+| `Defina APP_SECRETO en .env` | El `.env` es anterior al backend. Agregue `APP_SECRETO` (vea `.env.ejemplo`) |
+| La interfaz dice "No se pudo conectar con el servidor" | El backend no está arriba: `docker compose ps` y `docker compose logs app` |
+| La interfaz muestra el chip "Demostración" | Se compiló en modo simulado: `FRONTEND_MODO=real` en `.env` y `docker compose up -d --build web` |
+| Un usuario nuevo no recibe el código | Sin `SMTP_HOST` el código no se envía: está en `docker compose logs app` |
 
-## 8. Siguientes fases
+## 8. Backend (API)
 
-1. Migración del Excel histórico (317 registros) a `repositorio_scsl`.
-2. Backend (API) en un contenedor `app` conectado con `APP_BD_USUARIO`.
-3. Frontend y servidor web HTTPS en un contenedor `web`.
+Python 3.12 + FastAPI, en `backend/`. Implementa el contrato de `frontend/src/api/real.js` bajo `/api`.
+
+| Archivo | Qué hace |
+| --- | --- |
+| `app/main.py` | Arranque, rutas y salud (`/api/salud`) |
+| `app/seguridad.py` | Sesiones (token = id de la tabla `sesiones`, cierre por inactividad), permisos y auditoría |
+| `app/tramites.py` | Forma del trámite en las respuestas y permisos por trámite |
+| `app/informes.py` | Guardado de PDF, texto para la búsqueda y páginas con marca de agua |
+| `app/rutas/` | Un archivo por módulo: acceso, catálogos, trámites, prompts, tablero, administración, importación |
+| `pruebas/prueba_api.py` | Prueba de punta a punta de toda la API |
+
+- Se conecta con la cuenta limitada `APP_BD_USUARIO`; las reglas del flujo las vuelve a verificar la base.
+- No publica puertos: solo se llega a ella por Nginx (`http://localhost:8080/api/...`).
+- Documentación interactiva: `http://localhost:8080/api/docs`.
+- Los informes y los Excel en análisis viven en el volumen `scsl_archivos` (`/datos` dentro del contenedor).
+- Unificar valores de catálogo usa `unificar_catalogo_app`, que exige `GESTIONAR_CATALOGOS` al usuario.
+
+**Probar toda la API** en una copia aislada (no toca los datos reales):
+
+```powershell
+docker compose -p scsl-prueba -f docker-compose.yml -f docker-compose.prueba.yml up -d --build
+pip install openpyxl
+$env:SCSL_PRUEBA=1; python backend/pruebas/prueba_api.py   # === TODAS LAS PRUEBAS DE LA API PASARON ===
+docker compose -p scsl-prueba -f docker-compose.yml -f docker-compose.prueba.yml down -v   # borrar la copia
+```
+
+**Cambié código del backend:** `docker compose up -d --build app`.
+
+## 9. Siguientes fases
+
+1. Migrar el Excel histórico real (Administración → Importar Excel): analizar, probar y luego migrar.
+2. Configurar el correo (`SMTP_*`) para enviar los códigos de activación.
+3. HTTPS para la red interna.
+4. OCR para PDF escaneados (hoy se extrae el texto solo de PDF con texto).
