@@ -1,9 +1,8 @@
 # ============================================================
 # REPOSITORIO SCSL - Docker Compose
 #
-# Un solo archivo para todo el proyecto. Por ahora levanta la base
-# de datos; en las siguientes fases se agregan aqui la aplicacion
-# (backend) y el servidor web.
+# Un solo archivo para todo el proyecto: base de datos (bd), backend
+# (app) e interfaz web (web).
 #
 #   1) Copie .env.ejemplo como .env y cambie todas las claves.
 #   2) docker compose up -d
@@ -12,8 +11,17 @@
 # ============================================================
 name: repositorio-scsl
 
+# Logs de Docker con tamano maximo (sin esto crecen hasta llenar el disco).
+x-registros: &registros
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
 services:
   bd:
+    <<: *registros
     image: postgres:16
     container_name: scsl_bd
     restart: unless-stopped
@@ -44,9 +52,52 @@ services:
       timeout: 5s
       retries: 10
 
+  # Backend: API en Python (FastAPI). Solo se llega a ella a traves de "web"
+  # (Nginx envia /api/ a app:8000); no publica puertos en el equipo.
+  app:
+    <<: *registros
+    build: ./backend
+    image: repositorio-scsl-app
+    container_name: scsl_app
+    restart: unless-stopped
+    environment:
+      BD_HOST: bd
+      BD_NOMBRE: repositorio_scsl
+      APP_BD_USUARIO: ${APP_BD_USUARIO:-scsl_app}
+      APP_BD_CLAVE: ${APP_BD_CLAVE:?Defina APP_BD_CLAVE en .env}
+      APP_SECRETO: ${APP_SECRETO:?Defina APP_SECRETO en .env}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PUERTO: ${SMTP_PUERTO:-587}
+      SMTP_USUARIO: ${SMTP_USUARIO:-}
+      SMTP_CLAVE: ${SMTP_CLAVE:-}
+      SMTP_REMITENTE: ${SMTP_REMITENTE:-}
+      SMTP_TLS: ${SMTP_TLS:-si}
+      TZ: America/La_Paz
+    volumes:
+      - scsl_archivos:/datos                             # informes PDF y Excel en analisis
+    depends_on:
+      bd:
+        condition: service_healthy
+
+  # Interfaz web (Vue compilado y servido por Nginx)
+  web:
+    <<: *registros
+    build:
+      context: ./frontend
+      args:
+        VITE_API_MODO: ${FRONTEND_MODO:-real}
+    image: repositorio-scsl-web
+    container_name: scsl_web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PUERTO:-8080}:80"
+    depends_on:
+      - app
+
   # Opcional: pgAdmin en el navegador (http://localhost:5050)
   #   docker compose --profile herramientas up -d
   pgadmin:
+    <<: *registros
     image: dpage/pgadmin4:latest
     container_name: scsl_pgadmin
     restart: unless-stopped
@@ -63,3 +114,5 @@ services:
 volumes:
   scsl_datos:
     name: scsl_datos
+  scsl_archivos:
+    name: scsl_archivos

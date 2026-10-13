@@ -1,0 +1,27 @@
+# ============================================================
+# REPOSITORIO SCSL - Entorno de PRUEBA aislado.
+# Levanta una segunda copia del sistema con su propia base y sus propios
+# archivos: sirve para ejecutar backend/pruebas/prueba_api.py sin tocar
+# los datos reales. Web en http://localhost:8081
+#
+#   docker compose -p scsl-prueba -f docker-compose.yml -f docker-compose.prueba.yml up -d --build
+#   SCSL_PRUEBA=1 python backend/pruebas/prueba_api.py
+#   docker compose -p scsl-prueba -f docker-compose.yml -f docker-compose.prueba.yml down -v   # borrar todo
+# ============================================================
+services:
+  bd:
+    container_name: scsl_prueba_bd
+    ports: !override
+      - "127.0.0.1:5434:5432"
+  app:
+    container_name: scsl_prueba_app
+  web:
+    container_name: scsl_prueba_web
+    ports: !override
+      - "127.0.0.1:8081:80"
+
+volumes:
+  scsl_datos:
+    name: scsl_prueba_datos
+  scsl_archivos:
+    name: scsl_prueba_archivos

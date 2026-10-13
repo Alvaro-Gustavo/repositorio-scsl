@@ -1,3 +1,10 @@
 .env
 bd/respaldos/*
 !bd/respaldos/.gitkeep
+__pycache__/
+*.pyc
+.venv/
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+.playwright-mcp/
