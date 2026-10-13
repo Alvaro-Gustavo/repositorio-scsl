@@ -26,6 +26,7 @@ repositorio-scsl/
 ├── backend/                  API en Python (FastAPI): sección 8
 ├── docs/                     Arquitectura y guía de despliegue en servidor
 ├── scripts/respaldo.sh       Respaldo de la base y los PDF (para programar con cron)
+├── scripts/configurar_correo.ps1  Configura el correo (SMTP) en los 3 proyectos y envía una prueba
 ├── frontend/                 Interfaz web en Vue 3: ver frontend/README.md
 └── bd/
     ├── init/                 Se ejecuta UNA vez, al crear la base
@@ -209,6 +210,7 @@ SELECT unificar_catalogo('entidades', 12, 47);
 | Iniciar / detener | `docker compose up -d` / `docker compose stop` |
 | Ver estado y logs | `docker compose ps` / `docker compose logs -f bd` |
 | Respaldo completo (base + PDF) | `bash scripts/respaldo.sh` |
+| Configurar el envío de correos (Gmail u otro SMTP) en los 3 proyectos | `powershell -ExecutionPolicy Bypass -File scripts\configurar_correo.ps1` |
 | Respaldo de la base | `docker exec scsl_bd pg_dump -U postgres -Fc -d repositorio_scsl -f /respaldos/scsl_AAAA-MM-DD.dump` |
 | Respaldo de los PDF | `docker run --rm -v scsl_archivos:/datos -v ${PWD}/bd/respaldos:/r alpine tar czf /r/archivos_AAAA-MM-DD.tgz -C /datos .` |
 | Ver códigos de activación (sin SMTP) | `docker compose logs app \| Select-String Código` (Linux: `\| grep Código`) |
