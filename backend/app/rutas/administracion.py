@@ -4,15 +4,16 @@ import secrets
 
 from fastapi import APIRouter, Body, Depends, Response
 
+from .. import config
 from ..bd import conexion, todos, uno, valor
-from ..correo import emitir_codigo
+from ..correo import avisar, emitir_codigo
 from ..errores import ErrorApi, validar
-from ..seguridad import SQL_USUARIO, Usuario, auditar, requiere, usuario_actual, usuario_publico
+from ..seguridad import (SQL_USUARIO, Usuario, auditar, problema_con_correo, requiere, usuario_actual,
+                         usuario_publico)
 
 rutas = APIRouter()
 
 ROLES = ('ADMIN', 'JEFE', 'ABOGADO', 'SECRETARIA')
-CORREO = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
 
 # ---------------- Usuarios ----------------
@@ -47,10 +48,8 @@ def crear_usuario(d: dict = Body(...), u: Usuario = Depends(requiere('GESTIONAR_
     campos = {}
     if not nombre:
         campos['nombre_completo'] = 'Ingrese el nombre.'
-    if not CORREO.match(correo):
-        campos['correo'] = 'Ingrese un correo válido.'
-    elif valor(con, 'SELECT 1 FROM usuarios WHERE lower(correo) = %s', (correo,)):
-        campos['correo'] = 'Ya existe un usuario con ese correo.'
+    if problema := problema_con_correo(con, correo):
+        campos['correo'] = problema
     if d.get('rol') not in ROLES:
         campos['rol'] = 'Elija un rol.'
     validar(campos)
@@ -77,6 +76,13 @@ def actualizar_usuario(id_: int, d: dict = Body(...), u: Usuario = Depends(requi
         raise ErrorApi('Elija un rol.', 422, {'rol': 'Rol no válido.'})
     if id_ == u.id and d.get('rol') and d['rol'] != actual['rol']:
         raise ErrorApi('No puede cambiar su propio rol.', 409)
+    correo = (d.get('correo') or '').strip().lower() if 'correo' in d else actual['correo'].lower()
+    cambia_correo = correo != actual['correo'].lower()
+    if cambia_correo:
+        if id_ == u.id:
+            raise ErrorApi('Cambie su propio correo desde «Mi perfil»: ahí se confirma con un código.', 409)
+        if problema := problema_con_correo(con, correo, id_):
+            raise ErrorApi(problema, 422, {'correo': problema})
     if 'nombre_completo' in d:
         nombre = (d.get('nombre_completo') or '').strip()
         validar({'nombre_completo': 'Obligatorio.'} if not nombre else None)
@@ -87,9 +93,28 @@ def actualizar_usuario(id_: int, d: dict = Body(...), u: Usuario = Depends(requi
         con.execute('UPDATE usuarios SET rol_id = (SELECT id FROM roles WHERE nombre = %s) WHERE id = %s', (d['rol'], id_))
         if d['rol'] == 'ABOGADO':
             _vincular_profesional(con, id_, d.get('nombre_completo') or actual['nombre_completo'])
+    if cambia_correo:
+        _cambiar_correo_por_admin(con, u, actual, correo)
     auditar(con, u, 'EDITAR_USUARIO', 'USUARIOS', 'usuario', id_,
             detalle={k: d[k] for k in ('nombre_completo', 'cargo', 'rol') if k in d})
     return usuario_publico(con, id_)
+
+
+def _cambiar_correo_por_admin(con, u: Usuario, actual, correo):
+    """El correo es la identidad de la cuenta: la persona debe probar que recibe en la dirección nueva.
+    La cuenta queda sin activar, se cierran sus sesiones y recibe un código de activación en el correo nuevo
+    (al activarla elige una contraseña nueva). A la dirección anterior se le avisa del cambio."""
+    id_ = actual['id']
+    con.execute('UPDATE usuarios SET correo = %s, correo_verificado = false WHERE id = %s', (correo, id_))
+    con.execute('UPDATE sesiones SET revocada_en = now() WHERE usuario_id = %s AND revocada_en IS NULL', (id_,))
+    con.execute('''UPDATE codigos_verificacion SET usado_en = now()
+                    WHERE usuario_id = %s AND usado_en IS NULL''', (id_,))
+    emitir_codigo(con, id_, correo, 'ACTIVACION')
+    auditar(con, u, 'CAMBIAR_CORREO', 'USUARIOS', 'usuario', id_,
+            detalle={'anterior': actual['correo'], 'nuevo': correo, 'por': 'administrador'})
+    avisar(actual['correo'], f'{config.NOMBRE_SISTEMA}: cambió el correo de su cuenta',
+           f'El administrador cambió el correo de su cuenta a {correo}. Si no esperaba este cambio, '
+           f'comuníquese de inmediato con el administrador del sistema.')
 
 
 @rutas.patch('/usuarios/{id_}/activo')

@@ -2,7 +2,7 @@
 // Perfil del usuario: datos propios, cambio de contrasena y segundo factor (2FA).
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { AlertTriangle, ShieldCheck, ShieldOff, Copy, LoaderCircle, KeyRound } from '@lucide/vue'
+import { AlertTriangle, ShieldCheck, ShieldOff, Copy, LoaderCircle, KeyRound, Mail } from '@lucide/vue'
 import { api } from '@/api'
 import { useSesion } from '@/stores/sesion'
 import { useAvisos } from '@/stores/avisos'
@@ -49,6 +49,41 @@ async function cambiarClave() {
     sesion.actualizarUsuario({ debe_cambiar_contrasena: false })
     clave.value = { actual: '', nueva: '', confirmacion: '' }
   } catch { /* errores ya marcados */ }
+}
+
+// ---------- Correo ----------
+// Paso 1: correo nuevo + contraseña actual -> código al correo nuevo. Paso 2: el código confirma el cambio.
+const cambioCorreo = ref({ correo: '', clave: '', codigo: '' })
+const correoPendiente = ref('') // a dónde se envió el código
+const envioCorreo = useEnvio()
+const erroresCorreo = envioCorreo.errores
+
+async function solicitarCambioCorreo() {
+  const e = {}
+  const correo = cambioCorreo.value.correo.trim().toLowerCase()
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) e.correo = 'Ingrese un correo válido.'
+  else if (correo === (usuario.value.correo || '').toLowerCase()) e.correo = 'Escriba una dirección distinta de la actual.'
+  if (!cambioCorreo.value.clave) e.clave = 'Ingrese su contraseña actual.'
+  if (Object.keys(e).length) { erroresCorreo.value = e; return }
+  try {
+    const r = await envioCorreo.enviar(() => api.perfil.solicitarCambioCorreo({ correo, clave: cambioCorreo.value.clave }), `Le enviamos un código a ${correo}`)
+    correoPendiente.value = r.enviado_a
+    cambioCorreo.value = { correo: '', clave: '', codigo: '' }
+  } catch { /* errores ya marcados */ }
+}
+async function confirmarCambioCorreo() {
+  const codigo = cambioCorreo.value.codigo.trim()
+  if (!/^\d{6}$/.test(codigo)) { erroresCorreo.value = { codigo: 'Ingrese los 6 dígitos del código.' }; return }
+  try {
+    const r = await envioCorreo.enviar(() => api.perfil.confirmarCambioCorreo(codigo), 'Correo actualizado. Desde ahora ingrese con su nuevo correo.')
+    sesion.actualizarUsuario(r)
+    cancelarCambioCorreo()
+  } catch { /* errores ya marcados */ }
+}
+function cancelarCambioCorreo() {
+  correoPendiente.value = ''
+  cambioCorreo.value = { correo: '', clave: '', codigo: '' }
+  erroresCorreo.value = {}
 }
 
 // ---------- Segundo factor ----------
@@ -130,7 +165,7 @@ onMounted(async () => {
           <div><dt>Rol</dt><dd>{{ ROLES[usuario.rol] || usuario.rol }}</dd></div>
           <div><dt>Último acceso</dt><dd>{{ formatoFechaHora(usuario.ultimo_acceso) }}</dd></div>
         </dl>
-        <p class="ayuda nota">El correo y el rol solo los puede cambiar el administrador.</p>
+        <p class="ayuda nota">El rol solo lo puede cambiar el administrador. Su correo lo cambia en «Cambiar correo», más abajo.</p>
 
         <form class="formulario-2" novalidate @submit.prevent="guardarDatos">
           <div class="campo">
@@ -166,6 +201,46 @@ onMounted(async () => {
           <div class="formulario-acciones campo-ancho">
             <button type="submit" class="boton boton-primario" :disabled="envioClave.enviando.value">
               <LoaderCircle v-if="envioClave.enviando.value" class="girar" aria-hidden="true" /><KeyRound v-else aria-hidden="true" /> Cambiar contraseña
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- Correo -->
+    <section id="cambiar-correo" class="panel" aria-labelledby="titulo-correo">
+      <header class="panel-cabecera"><h2 id="titulo-correo">Cambiar correo</h2></header>
+      <div class="panel-cuerpo">
+        <p class="ayuda nota">
+          Su correo es su usuario para ingresar y donde recibe los códigos. Para cambiarlo confirme su contraseña; le enviaremos
+          un código a la dirección nueva. Al confirmar se cierran sus otras sesiones y se avisa a su correo anterior.
+        </p>
+        <form v-if="!correoPendiente" class="formulario-2" novalidate @submit.prevent="solicitarCambioCorreo">
+          <div class="campo">
+            <label for="correo-nuevo">Correo nuevo<span class="requerido" aria-hidden="true">*</span></label>
+            <input id="correo-nuevo" v-model="cambioCorreo.correo" type="email" class="entrada" autocomplete="email" required maxlength="150"
+              :aria-invalid="erroresCorreo.correo ? 'true' : undefined" />
+            <p v-if="erroresCorreo.correo" class="error-campo">{{ erroresCorreo.correo }}</p>
+          </div>
+          <CampoClave id="correo-clave" v-model="cambioCorreo.clave" etiqueta="Contraseña actual" :error="erroresCorreo.clave" autocomplete="current-password" />
+          <div class="formulario-acciones campo-ancho">
+            <button type="submit" class="boton boton-primario" :disabled="envioCorreo.enviando.value">
+              <LoaderCircle v-if="envioCorreo.enviando.value" class="girar" aria-hidden="true" /><Mail v-else aria-hidden="true" /> Enviar código
+            </button>
+          </div>
+        </form>
+        <form v-else class="formulario-2" novalidate @submit.prevent="confirmarCambioCorreo">
+          <p class="mensaje mensaje-info campo-ancho">Enviamos un código de 6 dígitos a <strong>{{ correoPendiente }}</strong>. Vence en 30 minutos.</p>
+          <div class="campo">
+            <label for="correo-codigo">Código recibido<span class="requerido" aria-hidden="true">*</span></label>
+            <input id="correo-codigo" v-model="cambioCorreo.codigo" class="entrada" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required
+              :aria-invalid="erroresCorreo.codigo ? 'true' : undefined" />
+            <p v-if="erroresCorreo.codigo" class="error-campo">{{ erroresCorreo.codigo }}</p>
+          </div>
+          <div class="formulario-acciones campo-ancho">
+            <button type="button" class="boton" @click="cancelarCambioCorreo">Cancelar</button>
+            <button type="submit" class="boton boton-primario" :disabled="envioCorreo.enviando.value">
+              <LoaderCircle v-if="envioCorreo.enviando.value" class="girar" aria-hidden="true" /> Confirmar cambio
             </button>
           </div>
         </form>

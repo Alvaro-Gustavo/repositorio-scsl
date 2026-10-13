@@ -70,6 +70,9 @@ export const api = {
     actualizar: (datos) => put('/perfil', datos),
     // POST /perfil/clave {actual, nueva} -> 204
     cambiarClave: (datos) => post('/perfil/clave', datos),
+    // POST /perfil/correo {correo, clave} -> {enviado_a}; POST /perfil/correo/confirmar {codigo} -> usuario
+    solicitarCambioCorreo: (datos) => post('/perfil/correo', datos),
+    confirmarCambioCorreo: (codigo) => post('/perfil/correo/confirmar', { codigo }),
     // POST /perfil/2fa/iniciar -> {secreto, uri}; POST /perfil/2fa/confirmar {codigo}; DELETE /perfil/2fa
     iniciar2fa: () => post('/perfil/2fa/iniciar'),
     confirmar2fa: (codigo) => post('/perfil/2fa/confirmar', { codigo }),
@@ -167,6 +170,8 @@ export const api = {
     listar: () => get('/usuarios'),
     // POST /usuarios {nombre_completo, correo, cargo, rol} -> usuario (envia codigo de activacion)
     crear: (datos) => post('/usuarios', datos),
+    // PUT /usuarios/{id} {nombre_completo?, cargo?, rol?, correo?} -> usuario
+    //   cambiar el correo deja la cuenta sin activar, cierra sus sesiones y envia un codigo al correo nuevo
     actualizar: (id, datos) => put(`/usuarios/${id}`, datos),
     activar: (id, activo) => patch(`/usuarios/${id}/activo`, { activo }),
     reenviarActivacion: (id) => post(`/usuarios/${id}/reenviar-activacion`),

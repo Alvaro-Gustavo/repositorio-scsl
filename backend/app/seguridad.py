@@ -2,6 +2,7 @@
 # El token es el id (UUID aleatorio) de la fila en la tabla sesiones; se envia
 # como "Authorization: Bearer <token>". La sesion se cierra por inactividad
 # (configuracion.sesion_inactividad_minutos) o al llegar a SESION_MAXIMA_HORAS.
+import re
 import uuid
 from dataclasses import dataclass, field
 
@@ -9,7 +10,7 @@ from fastapi import Depends, Request
 from psycopg.types.json import Jsonb
 
 from . import config
-from .bd import conexion, parametro, todos, uno
+from .bd import conexion, parametro, todos, uno, valor
 from .errores import ErrorApi
 
 
@@ -45,6 +46,18 @@ SQL_USUARIO = '''SELECT u.id, u.nombre_completo, u.correo, u.cargo, r.nombre AS 
                         u.correo_verificado, u.debe_cambiar_contrasena, u.totp_activo,
                         u.bloqueado_hasta, u.ultimo_acceso, u.creado_en
                    FROM usuarios u JOIN roles r ON r.id = u.rol_id'''
+
+
+CORREO_VALIDO = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
+
+def problema_con_correo(con, correo, excluir_id=None):
+    """Mensaje si el correo (ya en minúsculas) no sirve como identidad de una cuenta; None si sirve."""
+    if not CORREO_VALIDO.match(correo) or len(correo) > 150:
+        return 'Ingrese un correo válido.'
+    if valor(con, 'SELECT 1 FROM usuarios WHERE lower(correo) = %s AND id IS DISTINCT FROM %s', (correo, excluir_id)):
+        return 'Ya existe un usuario con ese correo.'
+    return None
 
 
 def usuario_publico(con, usuario_id):

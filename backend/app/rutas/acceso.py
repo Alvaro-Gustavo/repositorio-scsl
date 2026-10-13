@@ -4,9 +4,10 @@ from fastapi import APIRouter, Body, Depends, Request, Response
 
 from .. import config
 from ..bd import conexion, parametro, uno
-from ..correo import emitir_codigo, verificar_codigo
+from ..correo import avisar, emitir_codigo, verificar_codigo
 from ..errores import ErrorApi, validar
-from ..seguridad import Usuario, auditar, crear_sesion, ip_cliente, usuario_actual, usuario_publico
+from ..seguridad import (Usuario, auditar, crear_sesion, ip_cliente, problema_con_correo, usuario_actual,
+                         usuario_publico)
 
 rutas = APIRouter()
 
@@ -151,9 +152,7 @@ def actualizar_perfil(datos: dict = Body(...), u: Usuario = Depends(usuario_actu
 
 @rutas.post('/perfil/clave', status_code=204)
 def cambiar_clave(datos: dict = Body(...), u: Usuario = Depends(usuario_actual), con=Depends(conexion)):
-    ok = uno(con, 'SELECT hash_contrasena = crypt(%s, hash_contrasena) AS ok FROM usuarios WHERE id = %s',
-             (datos.get('actual') or '', u.id))['ok']
-    if not ok:
+    if not _clave_correcta(con, u.id, datos.get('actual')):
         raise ErrorApi('La contraseña actual no es correcta.', 400, {'actual': 'No coincide.'})
     validar_clave(datos.get('nueva'), 'nueva')
     if datos.get('nueva') == datos.get('actual'):
@@ -163,6 +162,50 @@ def cambiar_clave(datos: dict = Body(...), u: Usuario = Depends(usuario_actual),
                 (u.id, u.sesion_id))
     auditar(con, u, 'CAMBIAR_CONTRASENA', 'ACCESO', 'usuario', u.id)
     return Response(status_code=204)
+
+
+def _clave_correcta(con, usuario_id, clave):
+    return uno(con, 'SELECT hash_contrasena = crypt(%s, hash_contrasena) AS ok FROM usuarios WHERE id = %s',
+               (clave or '', usuario_id))['ok']
+
+
+@rutas.post('/perfil/correo')
+def solicitar_cambio_correo(datos: dict = Body(...), u: Usuario = Depends(usuario_actual), con=Depends(conexion)):
+    """Paso 1: con la contraseña actual, envía un código a la dirección nueva (prueba que es de la persona)."""
+    nuevo = (datos.get('correo') or '').strip().lower()
+    if not _clave_correcta(con, u.id, datos.get('clave')):
+        auditar(con, u, 'CAMBIAR_CORREO', 'ACCESO', 'usuario', u.id, 'FALLIDO', {'motivo': 'contraseña'})
+        con.commit()  # el intento fallido queda en la auditoría
+        raise ErrorApi('La contraseña actual no es correcta.', 400, {'clave': 'No coincide.'})
+    if nuevo == u.correo.lower():
+        raise ErrorApi('Ese ya es su correo.', 422, {'correo': 'Escriba una dirección distinta.'})
+    if problema := problema_con_correo(con, nuevo, u.id):
+        raise ErrorApi(problema, 422, {'correo': problema})
+    emitir_codigo(con, u.id, nuevo, 'CAMBIO_CORREO', dato=nuevo)
+    auditar(con, u, 'SOLICITAR_CAMBIO_CORREO', 'ACCESO', 'usuario', u.id, detalle={'nuevo': nuevo})
+    return {'enviado_a': nuevo}
+
+
+@rutas.post('/perfil/correo/confirmar')
+def confirmar_cambio_correo(datos: dict = Body(...), u: Usuario = Depends(usuario_actual), con=Depends(conexion)):
+    """Paso 2: el código recibido en la dirección nueva confirma el cambio; se cierran las otras sesiones
+    y se avisa a la dirección anterior."""
+    codigo = verificar_codigo(con, u.id, 'CAMBIO_CORREO', datos.get('codigo'))
+    if not codigo:
+        con.commit()  # conserva el conteo de intentos
+        raise ErrorApi('El código no es válido o ya venció.', 400, {'codigo': 'Código incorrecto o vencido.'})
+    nuevo = codigo['dato']
+    if problema := problema_con_correo(con, nuevo, u.id):  # alguien pudo tomarlo mientras tanto
+        raise ErrorApi(problema, 409, {'codigo': problema})
+    con.execute('UPDATE usuarios SET correo = %s WHERE id = %s', (nuevo, u.id))
+    con.execute('UPDATE sesiones SET revocada_en = now() WHERE usuario_id = %s AND id <> %s AND revocada_en IS NULL',
+                (u.id, u.sesion_id))
+    auditar(con, u, 'CAMBIAR_CORREO', 'ACCESO', 'usuario', u.id,
+            detalle={'anterior': u.correo, 'nuevo': nuevo, 'por': 'titular'})
+    avisar(u.correo, f'{config.NOMBRE_SISTEMA}: cambió el correo de su cuenta',
+           f'El correo de su cuenta se cambió a {nuevo}. Si usted no hizo este cambio, comuníquese de inmediato '
+           f'con el administrador del sistema.')
+    return usuario_publico(con, u.id)
 
 
 @rutas.post('/perfil/2fa/iniciar')

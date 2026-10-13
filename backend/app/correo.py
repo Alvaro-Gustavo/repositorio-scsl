@@ -1,4 +1,4 @@
-# Codigos de 6 digitos (activacion y recuperacion) y su envio por correo.
+# Codigos de 6 digitos (activacion, recuperacion y cambio de correo) y su envio por correo.
 # El codigo se guarda cifrado con bcrypt; nunca en texto.
 import logging
 import secrets
@@ -10,7 +10,7 @@ from .bd import uno
 
 log = logging.getLogger('scsl.correo')
 
-VIGENCIA_MINUTOS = {'ACTIVACION': 24 * 60, 'RECUPERACION': 30}
+VIGENCIA_MINUTOS = {'ACTIVACION': 24 * 60, 'RECUPERACION': 30, 'CAMBIO_CORREO': 30}
 MAX_INTENTOS = 5
 
 
@@ -28,14 +28,26 @@ def enviar(destino, asunto, texto):
         s.send_message(msj)
 
 
-def emitir_codigo(con, usuario_id, correo, proposito):
-    """Anula los codigos anteriores, crea uno nuevo y lo envia."""
+def avisar(destino, asunto, texto):
+    """Aviso informativo: si no hay SMTP o el envio falla, se registra y la operacion sigue."""
+    if not config.SMTP_HOST:
+        log.warning('Correo sin configurar (SMTP_HOST vacío). Aviso no enviado a %s: %s', destino, asunto)
+        return
+    try:
+        enviar(destino, asunto, texto)
+    except (OSError, smtplib.SMTPException) as e:
+        log.error('No se pudo enviar el aviso "%s" a %s: %s', asunto, destino, e)
+
+
+def emitir_codigo(con, usuario_id, correo, proposito, dato=None):
+    """Anula los codigos anteriores, crea uno nuevo y lo envia a `correo`.
+    dato: para CAMBIO_CORREO, la direccion nueva que se confirma con el codigo."""
     codigo = f'{secrets.randbelow(10**6):06d}'
     con.execute('''UPDATE codigos_verificacion SET usado_en = now()
                     WHERE usuario_id = %s AND proposito = %s AND usado_en IS NULL''', (usuario_id, proposito))
-    con.execute('''INSERT INTO codigos_verificacion (usuario_id, proposito, hash_codigo, expira_en)
-                   VALUES (%s, %s, crypt(%s, gen_salt('bf', 8)), now() + make_interval(mins => %s))''',
-                (usuario_id, proposito, codigo, VIGENCIA_MINUTOS[proposito]))
+    con.execute('''INSERT INTO codigos_verificacion (usuario_id, proposito, hash_codigo, expira_en, dato)
+                   VALUES (%s, %s, crypt(%s, gen_salt('bf', 8)), now() + make_interval(mins => %s), %s)''',
+                (usuario_id, proposito, codigo, VIGENCIA_MINUTOS[proposito], dato))
     if not config.SMTP_HOST:
         log.warning('Correo sin configurar (SMTP_HOST vacío). Código de %s para %s: %s', proposito, correo, codigo)
         return
@@ -44,6 +56,11 @@ def emitir_codigo(con, usuario_id, correo, proposito):
         texto = (f'Se creó su cuenta en el {config.NOMBRE_SISTEMA}.\n\n'
                  f'Código de activación: {codigo}\n\nVence en 24 horas. Ingrese a la página "Activar cuenta" '
                  f'con su correo, este código y la contraseña que elija.')
+    elif proposito == 'CAMBIO_CORREO':
+        asunto = f'{config.NOMBRE_SISTEMA}: confirme su nuevo correo'
+        texto = (f'Se pidió usar esta dirección como correo de su cuenta en el {config.NOMBRE_SISTEMA}.\n\n'
+                 f'Código de confirmación: {codigo}\n\nVence en 30 minutos. Si usted no lo pidió, ignore este mensaje: '
+                 f'el correo de la cuenta no cambia sin este código.')
     else:
         asunto = f'{config.NOMBRE_SISTEMA}: recuperar contraseña'
         texto = (f'Código para restablecer su contraseña: {codigo}\n\nVence en 30 minutos. '
@@ -52,16 +69,17 @@ def emitir_codigo(con, usuario_id, correo, proposito):
 
 
 def verificar_codigo(con, usuario_id, proposito, codigo):
-    """True si el codigo es valido; lo marca como usado. Cuenta los intentos fallidos."""
-    c = uno(con, '''SELECT id, hash_codigo = crypt(%s, hash_codigo) AS correcto
+    """Si el codigo es valido lo marca como usado y devuelve {'dato': ...}; si no, None.
+    Cuenta los intentos fallidos."""
+    c = uno(con, '''SELECT id, dato, hash_codigo = crypt(%s, hash_codigo) AS correcto
                       FROM codigos_verificacion
                      WHERE usuario_id = %s AND proposito = %s AND usado_en IS NULL
                        AND expira_en > now() AND intentos < %s
                      ORDER BY creado_en DESC LIMIT 1''', (str(codigo or ''), usuario_id, proposito, MAX_INTENTOS))
     if not c:
-        return False
+        return None
     if not c['correcto']:
         con.execute('UPDATE codigos_verificacion SET intentos = intentos + 1 WHERE id = %s', (c['id'],))
-        return False
+        return None
     con.execute('UPDATE codigos_verificacion SET usado_en = now() WHERE id = %s', (c['id'],))
-    return True
+    return {'dato': c['dato']}

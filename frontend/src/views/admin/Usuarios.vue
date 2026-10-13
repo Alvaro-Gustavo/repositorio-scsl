@@ -56,17 +56,22 @@ const activacionEnviada = ref('')
 // ---------- Editar ----------
 const edicionAbierta = ref(false)
 const edicion = ref({})
+// El correo es la identidad de la cuenta: al cambiarlo, la persona vuelve a activar su cuenta desde el correo nuevo.
+const cambiaCorreo = computed(() => !edicion.value.propio && !!edicion.value.correo
+  && edicion.value.correo.trim().toLowerCase() !== (edicion.value.correoOriginal || '').toLowerCase())
 const envioEdicion = useEnvio()
 function abrirEdicion(u) {
-  edicion.value = { id: u.id, correo: u.correo, nombre_completo: u.nombre_completo, cargo: u.cargo || '', rol: u.rol, propio: esYo(u) }
+  edicion.value = { id: u.id, correo: u.correo, correoOriginal: u.correo, nombre_completo: u.nombre_completo, cargo: u.cargo || '', rol: u.rol, propio: esYo(u) }
   envioEdicion.errores.value = {}
   edicionAbierta.value = true
 }
 async function guardarEdicion() {
-  const { id, nombre_completo, cargo, rol, propio } = edicion.value
+  const { id, nombre_completo, cargo, rol, propio, correo } = edicion.value
   const datos = propio ? { nombre_completo, cargo } : { nombre_completo, cargo, rol }
+  if (cambiaCorreo.value) datos.correo = correo.trim()
+  const aviso = cambiaCorreo.value ? `Usuario actualizado. Se envió un código de activación a ${datos.correo}` : 'Usuario actualizado'
   try {
-    await envioEdicion.enviar(() => api.usuarios.actualizar(id, datos), 'Usuario actualizado')
+    await envioEdicion.enviar(() => api.usuarios.actualizar(id, datos), aviso)
     edicionAbierta.value = false
     await cargar()
   } catch { /* mensaje ya mostrado */ }
@@ -288,7 +293,18 @@ const tiene = (rol, permiso) => rol.permisos.includes(permiso)
     <!-- Editar -->
     <Modal v-model="edicionAbierta" titulo="Editar usuario" ancho="520px">
       <form id="form-edicion" class="formulario" novalidate @submit.prevent="guardarEdicion">
-        <p class="texto-2 texto-pequeno">Correo: <strong>{{ edicion.correo }}</strong> (no se puede cambiar).</p>
+        <p v-if="edicion.propio" class="texto-2 texto-pequeno">Correo: <strong>{{ edicion.correo }}</strong>. Cambie su propio correo desde <RouterLink to="/perfil">Mi perfil</RouterLink>, donde se confirma con un código.</p>
+        <div v-else class="campo">
+          <label for="ed-correo">Correo institucional<span class="requerido" aria-hidden="true">*</span></label>
+          <input id="ed-correo" v-model="edicion.correo" type="email" class="entrada" autocomplete="off" required
+            :aria-invalid="!!envioEdicion.errores.value.correo" aria-describedby="ed-correo-ayuda ed-correo-error" />
+          <span v-if="envioEdicion.errores.value.correo" id="ed-correo-error" class="error-campo">{{ envioEdicion.errores.value.correo }}</span>
+          <p v-if="cambiaCorreo" id="ed-correo-ayuda" class="mensaje mensaje-aviso texto-pequeno">
+            Al guardar, se cierran las sesiones de esta persona y su cuenta queda pendiente de activación: recibirá un código en
+            <strong>{{ edicion.correo.trim() }}</strong> para elegir una contraseña nueva. A la dirección anterior se le avisa del cambio.
+          </p>
+          <span v-else id="ed-correo-ayuda" class="ayuda">Es la dirección con la que ingresa y recibe los códigos.</span>
+        </div>
         <div class="campo">
           <label for="ed-nombre">Nombre completo<span class="requerido" aria-hidden="true">*</span></label>
           <input id="ed-nombre" v-model="edicion.nombre_completo" class="entrada" required :aria-invalid="!!envioEdicion.errores.value.nombre_completo" />

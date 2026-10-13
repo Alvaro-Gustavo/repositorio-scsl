@@ -4,6 +4,8 @@ export const ETIQUETAS_ACCIONES = {
   INICIO_SESION: 'Inicio de sesión',
   INICIO_SESION_FALLIDO: 'Intento de ingreso fallido',
   CIERRE_SESION: 'Cierre de sesión',
+  SOLICITAR_CAMBIO_CORREO: 'Solicitud de cambio de correo',
+  CAMBIAR_CORREO: 'Cambio de correo',
   RECUPERAR_CONTRASENA: 'Recuperación de contraseña',
   CREAR_TRAMITE: 'Registro de trámite',
   EDITAR_TRAMITE: 'Edición de trámite',

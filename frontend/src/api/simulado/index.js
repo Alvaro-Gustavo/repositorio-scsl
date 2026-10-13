@@ -330,6 +330,24 @@ export const api = {
       if (!nueva || nueva.length < 10) throw new ErrorApi('La nueva contraseña debe tener al menos 10 caracteres.', 422, { nueva: 'Mínimo 10 caracteres.' })
       u.clave = nueva; u.debe_cambiar_contrasena = false
     }),
+    solicitarCambioCorreo: ({ correo, clave }) => op(() => {
+      const u = yo()
+      if (u.clave !== clave) throw new ErrorApi('La contraseña actual no es correcta.', 400, { clave: 'No coincide.' })
+      const nuevo = String(correo || '').trim().toLowerCase()
+      if (nuevo === u.correo.toLowerCase()) throw new ErrorApi('Ese ya es su correo.', 422, { correo: 'Escriba una dirección distinta.' })
+      if (bd.usuarios.some((x) => x.id !== u.id && x.correo.toLowerCase() === nuevo)) throw new ErrorApi('Ya existe un usuario con ese correo.', 422, { correo: 'Ya existe un usuario con ese correo.' })
+      u.correo_pendiente = nuevo
+      auditar('SOLICITAR_CAMBIO_CORREO', 'ACCESO', 'usuario', u.id, 'EXITOSO', { nuevo })
+      return { enviado_a: nuevo }
+    }),
+    confirmarCambioCorreo: (codigo) => op(() => {
+      const u = yo()
+      if (!u.correo_pendiente || String(codigo) !== '123456') throw new ErrorApi('El código no es válido o ya venció.', 400, { codigo: 'Código incorrecto (en demostración use 123456).' })
+      auditar('CAMBIAR_CORREO', 'ACCESO', 'usuario', u.id, 'EXITOSO', { anterior: u.correo, nuevo: u.correo_pendiente, por: 'titular' })
+      u.correo = u.correo_pendiente
+      delete u.correo_pendiente
+      return usuarioPublico(u)
+    }),
     iniciar2fa: () => op(() => ({ secreto: 'JBSWY3DPEHPK3PXP', uri: 'otpauth://totp/Repositorio%20SCSL?secret=JBSWY3DPEHPK3PXP' })),
     confirmar2fa: (codigo) => op(() => {
       if (!/^\d{6}$/.test(String(codigo))) throw new ErrorApi('Ingrese el código de 6 dígitos de su aplicación.', 422)
@@ -741,6 +759,13 @@ export const api = {
       if (d.nombre_completo !== undefined) u.nombre_completo = d.nombre_completo.trim()
       if (d.cargo !== undefined) u.cargo = d.cargo?.trim() || null
       if (d.rol) u.rol = d.rol
+      const correo = d.correo?.trim().toLowerCase()
+      if (correo && correo !== u.correo.toLowerCase()) {
+        if (u.id === yoMismo.id) throw new ErrorApi('Cambie su propio correo desde «Mi perfil»: ahí se confirma con un código.', 409)
+        if (bd.usuarios.some((x) => x.id !== u.id && x.correo.toLowerCase() === correo)) throw new ErrorApi('Ya existe un usuario con ese correo.', 422, { correo: 'Ya existe un usuario con ese correo.' })
+        auditar('CAMBIAR_CORREO', 'USUARIOS', 'usuario', u.id, 'EXITOSO', { anterior: u.correo, nuevo: correo, por: 'administrador' })
+        Object.assign(u, { correo, correo_verificado: false })
+      }
       auditar('EDITAR_USUARIO', 'USUARIOS', 'usuario', u.id, 'EXITOSO', d)
       return usuarioPublico(u)
     }),

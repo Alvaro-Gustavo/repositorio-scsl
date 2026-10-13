@@ -7,14 +7,16 @@
 //   emblema.png        -> emblema en el azul oficial, dentro de la tarjeta
 //   fondo-acceso.jpg   -> foto del edificio
 // Si falta un archivo se usa el escudo del sistema o el fondo azul compuesto.
+// Al reemplazar una imagen, suba ?v= aqui y en el estilo: el navegador la pide de nuevo aunque tenga la anterior en cache.
 import { ref } from 'vue'
 import { ShieldCheck, Lock } from '@lucide/vue'
 
 defineProps({ titulo: { type: String, required: true }, subtitulo: { type: String, default: '' } })
 
 const RESPALDO = '/escudo.svg'
-const emblemaClaro = ref('/marca/emblema-blanco.png')
-const emblemaTarjeta = ref('/marca/emblema.png')
+const VERSION = '2026-10-13'
+const emblemaClaro = ref(`/marca/emblema-blanco.png?v=${VERSION}`)
+const emblemaTarjeta = ref(`/marca/emblema.png?v=${VERSION}`)
 </script>
 
 <template>
@@ -93,7 +95,7 @@ const emblemaTarjeta = ref('/marca/emblema.png')
 .fondo-foto {
   position: absolute; inset: 0;
   background:
-    url('/marca/fondo-acceso.jpg') 42% 40% / cover no-repeat,
+    url('/marca/fondo-acceso.jpg?v=2026-10-13') 42% 40% / cover no-repeat,
     radial-gradient(120% 90% at 20% 0%, var(--acceso-cielo) 0%, var(--sello) 38%, var(--tinta-2) 70%, var(--tinta) 100%);
 }
 /* Velo azul: garantiza que el texto se lea con cualquier foto. */

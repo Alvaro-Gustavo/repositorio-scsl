@@ -376,6 +376,42 @@ def main():
     sec = ingresar(correo_sec, 'NuevaClave#2026')
     esperar(204, pedir('POST', '/auth/salir', sec), 'cierra sesion')
     esperar(401, pedir('GET', '/auth/sesion', sec), 'el token ya no sirve')
+
+    # ---------- Cambio de correo ----------
+    correo_abo, nuevo_abo = cuentas['ABOGADO']['correo'], f'abogada.nueva.{SUFIJO}@prueba.gob.bo'
+    otra_sesion_abo = ingresar(correo_abo, CLAVE)
+    esperar(400, pedir('POST', '/perfil/correo', abo, {'correo': nuevo_abo, 'clave': 'mala'}), 'cambio de correo pide la clave')
+    esperar(422, pedir('POST', '/perfil/correo', abo, {'correo': cuentas['JEFE']['correo'], 'clave': CLAVE}),
+            'no toma el correo de otra cuenta')
+    esperar(422, pedir('POST', '/perfil/correo', abo, {'correo': 'sin-arroba', 'clave': CLAVE}), 'valida el formato')
+    r = esperar(200, pedir('POST', '/perfil/correo', abo, {'correo': nuevo_abo.upper(), 'clave': CLAVE}), 'pide el cambio')
+    ok(r['enviado_a'] == nuevo_abo, 'el codigo va a la direccion nueva, en minusculas', r)
+    esperar(200, pedir('GET', '/auth/sesion', abo), 'pedirlo no cambia nada todavia')
+    esperar(400, pedir('POST', '/perfil/correo/confirmar', abo, {'codigo': '000000'}), 'codigo incorrecto rechazado')
+    esperar(400, pedir('POST', '/perfil/correo/confirmar', jefe, {'codigo': codigo_del_log(nuevo_abo)}),
+            'el codigo de otra persona no sirve')
+    d = esperar(200, pedir('POST', '/perfil/correo/confirmar', abo, {'codigo': codigo_del_log(nuevo_abo)}), 'confirma el cambio')
+    ok(d['correo'] == nuevo_abo, 'queda el correo nuevo', d)
+    esperar(200, pedir('GET', '/auth/sesion', abo), 'la sesion actual sigue abierta')
+    esperar(401, pedir('GET', '/auth/sesion', otra_sesion_abo), 'las otras sesiones se cierran')
+    esperar(401, pedir('POST', '/auth/ingresar', cuerpo={'correo': correo_abo, 'clave': CLAVE}), 'el correo anterior ya no ingresa')
+    abo = ingresar(nuevo_abo, CLAVE)
+    esperar(409, pedir('PUT', f'/usuarios/{yo["id"]}', admin, {'correo': f'otro.{SUFIJO}@prueba.gob.bo'}),
+            'el admin cambia su propio correo solo desde su perfil')
+    esperar(403, pedir('PUT', f'/usuarios/{cuentas["JEFE"]["id"]}', abo, {'correo': f'x.{SUFIJO}@prueba.gob.bo'}),
+            'sin GESTIONAR_USUARIOS no cambia correos ajenos')
+    esperar(422, pedir('PUT', f'/usuarios/{cuentas["JEFE"]["id"]}', admin, {'correo': nuevo_abo}), 'admin: correo ya usado')
+    nuevo_jefe = f'jefe.nuevo.{SUFIJO}@prueba.gob.bo'
+    d = esperar(200, pedir('PUT', f'/usuarios/{cuentas["JEFE"]["id"]}', admin, {'correo': nuevo_jefe}), 'admin cambia el correo')
+    ok(d['correo'] == nuevo_jefe and d['correo_verificado'] is False, 'la cuenta queda pendiente de activacion', d)
+    esperar(401, pedir('GET', '/auth/sesion', jefe), 'se cierran las sesiones de esa persona')
+    esperar(403, pedir('POST', '/auth/ingresar', cuerpo={'correo': nuevo_jefe, 'clave': CLAVE}), 'debe activar antes de ingresar')
+    esperar(204, pedir('POST', '/auth/activar', cuerpo={'correo': nuevo_jefe, 'codigo': codigo_del_log(nuevo_jefe),
+                                                         'clave': 'JefeNueva#2026'}), 'activa con el correo nuevo')
+    jefe = ingresar(nuevo_jefe, 'JefeNueva#2026')
+    aud = esperar(200, pedir('GET', '/auditoria?accion=CAMBIAR_CORREO', admin), 'auditoria del cambio')
+    ok(aud['total'] >= 2, 'el cambio de correo queda auditado', aud)
+
     esperar(200, pedir('PATCH', f'/usuarios/{cuentas["SECRETARIA"]["id"]}/activo', admin, {'activo': False}), 'desactiva usuario')
     esperar(401, pedir('POST', '/auth/ingresar', cuerpo={'correo': correo_sec, 'clave': 'NuevaClave#2026'}),
             'usuario desactivado no ingresa')
