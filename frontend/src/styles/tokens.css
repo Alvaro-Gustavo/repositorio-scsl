@@ -1,0 +1,71 @@
+/* ============================================================
+   Repositorio SCSL - tokens de diseno
+   Todos los colores, tipos y espacios se definen aqui. Ningun
+   componente debe escribir un color en hexadecimal.
+   ============================================================ */
+:root {
+  /* Marca: tinta institucional y azul de sello */
+  --tinta: #13294b;            /* azul oscuro institucional: barra lateral, titulos */
+  --tinta-2: #1d3a66;
+  --sello: #1f5fa8;            /* azul de accion: botones, enlaces, foco */
+  --sello-hover: #184d8a;
+  --sello-suave: #e6eef8;
+  --cge: #005180;              /* azul oficial del logo de la Contraloria */
+  --cge-oscuro: #0b2c4a;
+
+  /* Asistentes de IA externos (acceso rapido) */
+  --ia-chatgpt: #10a37f;
+  --ia-gemini: #4b6bd6;
+
+  /* Superficies */
+  --fondo: #eef1f5;            /* gris de archivo, frio */
+  --superficie: #ffffff;
+  --superficie-2: #f6f8fa;
+  --linea: #d5dbe3;
+  --linea-fuerte: #b7c1cd;
+
+  /* Texto */
+  --texto: #1b2430;
+  --texto-2: #4f5b6b;
+  --texto-3: #6d7887;
+  --texto-inverso: #ffffff;
+  --texto-inverso-2: #a9b9d1;   /* texto atenuado sobre la tinta */
+
+  /* Estados del tramite (cada uno con fondo suave) */
+  --recibido: #475569;     --recibido-suave: #eef1f5;
+  --elaboracion: #a1520a;  --elaboracion-suave: #fdf1e3;
+  --concluido: #157a3c;    --concluido-suave: #e5f4ea;
+  --archivado: #5b4b8a;    --archivado-suave: #efecf7;
+
+  /* Mensajes */
+  --exito: #157a3c;   --exito-suave: #e5f4ea;
+  --aviso: #a1520a;   --aviso-suave: #fdf1e3;
+  --peligro: #b42318; --peligro-suave: #fdecea;
+  --info: #3b4fb5;    --info-suave: #eceffb;
+
+  /* Tipografia */
+  --fuente-texto: 'Source Sans 3 Variable', 'Segoe UI', system-ui, sans-serif;
+  --fuente-titulo: 'Source Serif 4 Variable', Georgia, 'Times New Roman', serif;
+  --t-xs: 0.78rem;
+  --t-sm: 0.875rem;
+  --t-md: 1rem;
+  --t-lg: 1.125rem;
+  --t-xl: 1.375rem;
+  --t-2xl: 1.75rem;
+  --t-3xl: 2.25rem;
+
+  /* Espacios (escala de 4) */
+  --e-1: 4px; --e-2: 8px; --e-3: 12px; --e-4: 16px; --e-5: 20px;
+  --e-6: 24px; --e-8: 32px; --e-10: 40px; --e-12: 48px;
+
+  /* Bordes y sombras: radio pequeno para controles, mayor para paneles */
+  --radio-control: 6px;
+  --radio-panel: 10px;
+  --sombra-panel: 0 1px 2px rgba(19, 41, 75, 0.06), 0 1px 1px rgba(19, 41, 75, 0.04);
+  --sombra-flotante: 0 12px 32px rgba(19, 41, 75, 0.18);
+
+  --ancho-lateral: 248px;
+  --alto-superior: 64px;
+  --ancho-contenido: 1240px;
+  --foco: 0 0 0 3px rgba(31, 95, 168, 0.35);
+}

@@ -1,0 +1,22 @@
+/* ============================================================
+   Impresion de consultas y expedientes.
+   Oculta navegacion y controles; muestra el encabezado institucional
+   (.solo-impresion) que cada vista imprimible incluye.
+   ============================================================ */
+.solo-impresion { display: none; }
+
+@media print {
+  @page { size: A4; margin: 16mm 14mm; }
+  body { background: #fff; font-size: 10.5pt; color: #000; }
+  .no-imprimir, .barra-lateral, .barra-superior, .boton, .pestanas, .paginacion, .avisos, .modal-fondo { display: none !important; }
+  .solo-impresion { display: block; }
+  .marco { display: block !important; }
+  .marco-contenido { margin: 0 !important; }
+  .pagina { max-width: none; padding: 0; }
+  .panel { box-shadow: none; border: 1px solid #999; break-inside: avoid; }
+  .tarjeta-resultado { break-inside: avoid; }
+  a { color: #000; text-decoration: none; }
+  .impresion-encabezado { border-bottom: 2px solid #000; padding-bottom: 6pt; margin-bottom: 10pt; }
+  .impresion-encabezado h1 { font-size: 14pt; }
+  .impresion-encabezado p { font-size: 9pt; }
+}

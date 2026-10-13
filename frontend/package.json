@@ -1,0 +1,24 @@
+{
+  "name": "repositorio-scsl-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Repositorio SCSL - interfaz web (Vue 3 + Vite)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@fontsource-variable/source-sans-3": "^5.3.1",
+    "@fontsource-variable/source-serif-4": "^5.3.1",
+    "@lucide/vue": "^1.55.0",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.43",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.10",
+    "vite": "^7.3.7"
+  }
+}

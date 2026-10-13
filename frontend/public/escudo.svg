@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Repositorio SCSL">
+  <path d="M32 3 L56 11 V30 C56 45 45.5 55.5 32 61 C18.5 55.5 8 45 8 30 V11 Z" fill="#13294b"/>
+  <path d="M32 7.5 L52 14.2 V30 C52 42.6 43.6 51.6 32 56.6 C20.4 51.6 12 42.6 12 30 V14.2 Z" fill="none" stroke="#c9d6ea" stroke-width="1.6"/>
+  <g stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" fill="none">
+    <path d="M32 17 V44"/>
+    <path d="M20 23 H44"/>
+    <path d="M25 44 H39"/>
+    <path d="M20 23 L15.5 33 M20 23 L24.5 33"/>
+    <path d="M44 23 L39.5 33 M44 23 L48.5 33"/>
+  </g>
+  <path d="M14.5 33 C14.5 36.5 25.5 36.5 25.5 33 Z M38.5 33 C38.5 36.5 49.5 36.5 49.5 33 Z" fill="#ffffff"/>
+</svg>

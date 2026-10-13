@@ -1,0 +1,9 @@
+Imagen institucional de la pantalla de ingreso.
+
+  emblema.png        emblema de la CGE (mapa y sello) en azul oficial #005180, fondo transparente
+  emblema-blanco.png el mismo emblema en blanco, para ponerlo sobre la foto
+  fondo-acceso.jpg   foto del edificio de la Contraloria (1671x941)
+
+Para cambiar la foto: guardela como JPG con el nombre fondo-acceso.jpg (horizontal, 1600 px de ancho o mas,
+menos de 500 KB) y ejecute: docker compose up -d --build web
+Si falta un archivo, la pantalla usa el escudo del sistema o un fondo azul.
