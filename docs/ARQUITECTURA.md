@@ -120,7 +120,8 @@ bd/
 │   ├── 04_vistas.sql         Consultas guardadas: v_tramites, v_pendientes, tablero, prompts vigentes
 │   ├── 05_datos_iniciales.sql Roles, permisos, matriz rol-permiso, procedencias, sitios legales, configuración
 │   ├── 06_seguridad.sh       Crea la cuenta scsl_app (permisos limitados) y el primer ADMIN
-│   └── 07_notificaciones.sh  Tabla notificaciones y trigger que avisa al abogado cuando se le asigna un trámite
+│   ├── 07_notificaciones.sh  Tabla notificaciones y trigger que avisa al abogado cuando se le asigna un trámite
+│   └── 10_cambio_correo.sh   Códigos CAMBIO_CORREO (con la dirección nueva en «dato») para cambiar el correo
 ├── pruebas/prueba_reglas.sql Prueba todas las reglas y deshace los cambios
 └── respaldos/                Destino de los respaldos (no se sube a git)
 ```
@@ -153,7 +154,7 @@ RECIBIDO ──(se asigna abogado)──► EN_ELABORACION ──(el abogado sub
 **Búsqueda:** cada trámite tiene `vector_busqueda` (texto indexado con pesos: códigos y asunto pesan más que el
 texto del PDF). Se recalcula solo cuando cambia el trámite, su informe, sus precedentes o un nombre de catálogo.
 
-**Búsqueda en el contenido de los informes:** el texto del PDF se guarda con las páginas separadas por ``
+**Búsqueda en el contenido de los informes:** el texto del PDF se guarda con las páginas separadas por `\f`
 (`informes.texto_extraido`; los informes anteriores se separan solos al arrancar el backend). Con un texto de
 búsqueda, cada resultado trae `coincidencias_informe`: fragmentos con la palabra marcada y su página
 (`app/contenido.py`, sin tildes ni mayúsculas). La opción «Solo dentro de los informes PDF» (`en=contenido`) filtra
@@ -320,6 +321,7 @@ Si cualquier paso falla (por ejemplo, el trigger rechaza), la transacción se de
 | Contraseñas con bcrypt; bloqueo tras 5 intentos fallidos (15 min) | `seguridad.py`, `acceso.py`, tabla `usuarios` |
 | Segundo factor (TOTP) opcional, con el secreto cifrado en la base | `acceso.py` + `APP_SECRETO` |
 | Sesiones con vencimiento por inactividad; se revocan al salir, al desactivar al usuario o al restablecer la clave | tabla `sesiones` |
+| Cambio de correo solo probando la dirección nueva: el titular confirma con su clave y un código enviado a ella; si lo cambia el admin, la cuenta vuelve a activarse desde el correo nuevo. Se cierran sesiones y se avisa al correo anterior | `acceso.py`, `administracion.py`, `10_cambio_correo.sh` |
 | Permisos verificados en backend **y** en la base | `requiere()` + triggers |
 | Cuenta de base con mínimo privilegio | `06_seguridad.sh` |
 | Auditoría inmutable de cada acción relevante | trigger `auditoria_inmutable` |
