@@ -264,6 +264,18 @@ def main():
     ok(d['estado_tramite'] == 'CONCLUIDO' and d['informe']['paginas'] == 1 and d['fecha_salida'],
        'queda CONCLUIDO con informe y fecha de salida', d)
     ok(d['permisos']['descargar'] is False, 'el abogado no descarga el PDF original')
+
+    def avisos_de(token, tipo):
+        return [n for n in esperar(200, pedir('GET', '/notificaciones', token), f'avisos {tipo}')['items']
+                if n['tramite_id'] == t1['id'] and n['tipo'] == tipo]
+    a_jefe, a_sec = avisos_de(jefe, 'TRAMITE_CONCLUIDO'), avisos_de(sec, 'TRAMITE_CONCLUIDO')
+    ok(len(a_jefe) == 1 and 'listo para revisar' in a_jefe[0]['titulo'] and a_jefe[0]['creado_por']['id'] == cuentas['ABOGADO']['id'],
+       'el jefe recibe el aviso de tramite concluido', a_jefe)
+    ok(len(a_sec) == 1, 'la secretaria que registro y asigno recibe el aviso (una sola vez)', a_sec)
+    ok(not avisos_de(abo, 'TRAMITE_CONCLUIDO'), 'quien sube el informe no se avisa a si mismo')
+    esperar(200, pedir('POST', f'/tramites/{t1["id"]}/concluir', abo, campos=campos,
+                       archivos={'archivo': ('informe-v2.pdf', pdf, 'application/pdf')}), 'sube una version corregida')
+    ok(len(avisos_de(jefe, 'INFORME_ACTUALIZADO')) == 1, 'la version nueva avisa "informe actualizado"')
     pags = esperar(200, pedir('GET', f'/tramites/{t1["id"]}/informe/paginas', sec), 'visor con marca de agua')
     ok(len(pags['paginas']) == 1 and pags['paginas'][0].startswith('data:image/jpeg;base64,'), 'pagina como imagen')
     esperar(403, pedir('GET', f'/tramites/{t1["id"]}/informe/descargar', abo), 'abogado no descarga')

@@ -206,6 +206,19 @@ function notificarAsignacion(t, anterior, u) {
   if (anterior) aviso(cuenta(anterior), 'TRAMITE_REASIGNADO', `Trámite reasignado: ${t.hoja_ruta}`,
     `Ya no está a su cargo. Reasignado por ${u.nombre_completo}.`)
 }
+// Igual que el trigger notificar_conclusion: avisa a los jefes y a quien registró y asignó el trámite.
+function notificarConclusion(t, version, u) {
+  bd.notificaciones ||= []
+  const codigo = t.numero_documento || t.hoja_ruta
+  const [tipo, titulo, accion] = version === 1
+    ? ['TRAMITE_CONCLUIDO', `Trámite concluido, listo para revisar: ${codigo}`, 'subió el informe y concluyó el trámite']
+    : ['INFORME_ACTUALIZADO', `Informe actualizado: ${codigo}`, `subió la versión ${version} del informe`]
+  bd.usuarios
+    .filter((x) => x.activo && x.id !== u.id && (x.rol === 'JEFE' || x.id === t.asignado_por || x.id === t.creado_por))
+    .forEach((x) => bd.notificaciones.push({ id: ++bd.secuencia, usuario_id: x.id, tipo, titulo,
+      mensaje: `${u.nombre_completo} ${accion} (HR ${t.hoja_ruta}). ${t.asunto.slice(0, 200)}`, tramite_id: t.id,
+      leida_en: null, creado_en: ahora(), creado_por: persona(u.id) }))
+}
 function aplicarAsignacion(t, profesional_id, u) {
   const anterior = t.profesional_id
   aplicarAsignacionSinAviso(t, profesional_id, u)
@@ -516,6 +529,7 @@ export const api = {
           texto: `${t.asunto}. Informe subido en modo demostración: el texto real se extrae del PDF en el servidor.` }
       })
       auditar('SUBIR_INFORME', 'TRAMITES', 'tramite', t.id, 'EXITOSO', { archivo: archivo.name, version: versiones })
+      notificarConclusion(t, versiones, u)
       return expandir(t, true)
     }, 700),
     archivar: (id) => op(() => {

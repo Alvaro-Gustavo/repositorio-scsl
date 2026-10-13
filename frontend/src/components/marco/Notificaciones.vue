@@ -1,15 +1,17 @@
 <script setup>
 // Campana de notificaciones de la barra superior. Consulta cada minuto (y al volver
-// a la pestaña) si hay avisos nuevos, por ejemplo un trámite asignado al abogado.
+// a la pestaña) si hay avisos nuevos: un trámite asignado al abogado, o concluido (para el jefe
+// y la secretaria, que lo revisan y archivan).
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
-import { Bell, BellRing, FileInput, ArrowRightLeft, CheckCheck } from '@lucide/vue'
+import { Bell, BellRing, FileInput, ArrowRightLeft, CheckCheck, FileCheck2, FilePen } from '@lucide/vue'
 import { api } from '@/api'
 import { useAvisos } from '@/stores/avisos'
 import { formatoFechaHora } from '@/utils/formato'
 
 const INTERVALO_MS = 60000
-const ICONOS = { TRAMITE_ASIGNADO: FileInput, TRAMITE_REASIGNADO: ArrowRightLeft }
+const ICONOS = { TRAMITE_ASIGNADO: FileInput, TRAMITE_REASIGNADO: ArrowRightLeft, TRAMITE_CONCLUIDO: FileCheck2, INFORME_ACTUALIZADO: FilePen }
+const CLASES = { TRAMITE_REASIGNADO: 'icono-reasignado', TRAMITE_CONCLUIDO: 'icono-concluido', INFORME_ACTUALIZADO: 'icono-concluido' }
 
 const router = useRouter()
 const avisos = useAvisos()
@@ -93,7 +95,7 @@ onBeforeUnmount(() => {
       <ul v-else class="notif-lista">
         <li v-for="n in items" :key="n.id">
           <button type="button" class="notif" :class="{ 'no-leida': !n.leida_en }" @click="abrirNotificacion(n)">
-            <span class="notif-icono" :class="n.tipo === 'TRAMITE_REASIGNADO' ? 'icono-reasignado' : 'icono-asignado'" aria-hidden="true">
+            <span class="notif-icono" :class="CLASES[n.tipo] || 'icono-asignado'" aria-hidden="true">
               <component :is="ICONOS[n.tipo] || Bell" />
             </span>
             <span class="notif-texto">
@@ -146,6 +148,7 @@ onBeforeUnmount(() => {
 .notif-icono svg { width: 17px; height: 17px; }
 .icono-asignado { background: var(--elaboracion-suave); color: var(--elaboracion); }
 .icono-reasignado { background: var(--recibido-suave); color: var(--recibido); }
+.icono-concluido { background: var(--concluido-suave); color: var(--concluido); }
 .notif-texto { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .notif-texto strong { font-size: var(--t-sm); line-height: 1.3; }
 .notif-mensaje { font-size: var(--t-xs); color: var(--texto-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

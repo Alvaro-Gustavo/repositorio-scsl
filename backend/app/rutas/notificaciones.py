@@ -1,5 +1,6 @@
 # Notificaciones del usuario en sesión (campana de la barra superior).
-# Las crea la base (trigger notificar_asignacion) al asignar un trámite.
+# Las crea la base: al asignar un trámite (trigger notificar_asignacion, para el abogado) y al
+# concluirlo (trigger notificar_conclusion, para los jefes y quien registró y asignó el trámite).
 from fastapi import APIRouter, BackgroundTasks, Depends, Response
 
 from .. import config
@@ -45,17 +46,22 @@ def enviar_correos_de_asignacion(con, tramite_id, tareas: BackgroundTasks):
     transacción (now() es la hora de inicio de la transacción). Solo si hay SMTP configurado."""
     if not config.SMTP_HOST:
         return
-    for n in todos(con, '''SELECT u.correo, n.titulo, n.mensaje FROM notificaciones n JOIN usuarios u ON u.id = n.usuario_id
+    for n in todos(con, '''SELECT u.correo, n.tipo, n.titulo, n.mensaje FROM notificaciones n JOIN usuarios u ON u.id = n.usuario_id
                             WHERE n.tramite_id = %s AND n.creado_en = now()''', (tramite_id,)):
-        texto = (f"{n['titulo']}\n\n{n['mensaje'] or ''}\n\n"
-                 f"Ingrese al {config.NOMBRE_SISTEMA} para ver el trámite (Mis pendientes).")
+        texto = f"{n['titulo']}\n\n{n['mensaje'] or ''}\n\n" + pie_de_aviso(n['tipo'])
         tareas.add_task(_enviar_sin_fallar, n['correo'], f"{config.NOMBRE_SISTEMA}: {n['titulo']}", texto)
 
 
+def pie_de_aviso(tipo):
+    if tipo in ('TRAMITE_CONCLUIDO', 'INFORME_ACTUALIZADO'):
+        return f'Ingrese al {config.NOMBRE_SISTEMA} para revisar el informe y archivar el trámite.'
+    return f'Ingrese al {config.NOMBRE_SISTEMA} para ver el trámite (Mis pendientes).'
+
+
 def _enviar_sin_fallar(destino, asunto, texto):
-    # Un problema con el correo no debe afectar la asignación, que ya quedó guardada.
+    # Un problema con el correo no debe afectar la operación, que ya quedó guardada.
     try:
         enviar(destino, asunto, texto)
     except Exception:  # noqa: BLE001
         import logging
-        logging.getLogger('scsl.correo').exception('No se pudo enviar el aviso de asignación a %s', destino)
+        logging.getLogger('scsl.correo').exception('No se pudo enviar el aviso a %s', destino)

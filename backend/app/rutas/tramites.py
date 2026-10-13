@@ -217,7 +217,7 @@ def asignar(id_: str, tareas: BackgroundTasks, datos: dict = Body(default={}),
 
 
 @rutas.post('/tramites/{id_}/concluir')
-def concluir(id_: str, tipo_documento_id: str = Form(''), numero_documento: str = Form(''),
+def concluir(id_: str, tareas: BackgroundTasks, tipo_documento_id: str = Form(''), numero_documento: str = Form(''),
              fecha_salida: str = Form(''), archivo: UploadFile | None = File(None),
              u: Usuario = Depends(usuario_actual), con=Depends(conexion)):
     t = fila_tramite(con, id_)
@@ -260,6 +260,7 @@ def concluir(id_: str, tipo_documento_id: str = Form(''), numero_documento: str 
         version = valor(con, 'SELECT count(*) FROM informes WHERE tramite_id = %s', (t['id'],))
         auditar(con, u, 'SUBIR_INFORME', 'TRAMITES', 'tramite', t['id'],
                 detalle={'archivo': archivo.filename, 'version': version, 'sha256': huella})
+        enviar_correos_de_asignacion(con, t['id'], tareas)  # aviso a jefes y a quien registró y asignó
         return detalle(con, id_, u)
     except Exception:
         informes.borrar(ruta)
