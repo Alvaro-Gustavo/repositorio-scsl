@@ -1,0 +1,4 @@
+# Los scripts .sh deben tener finales de linea Unix (LF), incluso en Windows;
+# con CRLF el contenedor de PostgreSQL no puede ejecutarlos.
+*.sh  text eol=lf
+*.sql text eol=lf

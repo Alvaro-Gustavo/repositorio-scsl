@@ -1,0 +1,65 @@
+# ============================================================
+# REPOSITORIO SCSL - Docker Compose
+#
+# Un solo archivo para todo el proyecto. Por ahora levanta la base
+# de datos; en las siguientes fases se agregan aqui la aplicacion
+# (backend) y el servidor web.
+#
+#   1) Copie .env.ejemplo como .env y cambie todas las claves.
+#   2) docker compose up -d
+#
+# Funciona igual en Windows, Linux o macOS: solo necesita Docker.
+# ============================================================
+name: repositorio-scsl
+
+services:
+  bd:
+    image: postgres:16
+    container_name: scsl_bd
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: repositorio_scsl
+      POSTGRES_USER: ${BD_SUPERUSUARIO:-postgres}
+      POSTGRES_PASSWORD: ${BD_SUPERCLAVE:?Defina BD_SUPERCLAVE en .env}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"
+      TZ: America/La_Paz
+      PGTZ: America/La_Paz
+      # Usadas solo la primera vez por bd/init/06_seguridad.sh
+      APP_BD_USUARIO: ${APP_BD_USUARIO:-scsl_app}
+      APP_BD_CLAVE: ${APP_BD_CLAVE:?Defina APP_BD_CLAVE en .env}
+      ADMIN_NOMBRE: ${ADMIN_NOMBRE:-Administrador del sistema}
+      ADMIN_CORREO: ${ADMIN_CORREO:?Defina ADMIN_CORREO en .env}
+      ADMIN_CLAVE: ${ADMIN_CLAVE:?Defina ADMIN_CLAVE en .env}
+    ports:
+      # Solo accesible desde el mismo equipo. La aplicacion se conectara
+      # por la red interna de Docker, sin usar este puerto.
+      - "127.0.0.1:${BD_PUERTO:-5433}:5432"
+    volumes:
+      - scsl_datos:/var/lib/postgresql/data              # los datos viven aqui
+      - ./bd/init:/docker-entrypoint-initdb.d:ro         # se ejecutan solo al crear la base
+      - ./bd/respaldos:/respaldos                        # destino de los respaldos
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d repositorio_scsl"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Opcional: pgAdmin en el navegador (http://localhost:5050)
+  #   docker compose --profile herramientas up -d
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: scsl_pgadmin
+    restart: unless-stopped
+    profiles: ["herramientas"]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_CORREO:-admin@scsl.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_CLAVE:-cambie-esta-clave}
+    ports:
+      - "127.0.0.1:5050:80"
+    depends_on:
+      bd:
+        condition: service_healthy
+
+volumes:
+  scsl_datos:
+    name: scsl_datos
