@@ -105,7 +105,7 @@ services:
     restart: unless-stopped
     profiles: ["herramientas"]
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_CORREO:-admin@scsl.local}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_CORREO:-admin@contraloria.gob.bo}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_CLAVE:-cambie-esta-clave}
     ports:
       - "127.0.0.1:${PGADMIN_PUERTO:-5050}:80"
