@@ -122,7 +122,8 @@ def pendientes(u: Usuario = Depends(usuario_actual), con=Depends(conexion)):
 
 @rutas.get('/tramites/por-asignar')
 def por_asignar(u: Usuario = Depends(requiere('ASIGNAR_TRAMITE')), con=Depends(conexion)):
-    return lista(con, "t.activo AND t.estado_tramite = 'RECIBIDO'", None, 't.creado_en ASC')
+    # Los migrados del Excel no siguen el flujo: no se asignan desde aquí.
+    return lista(con, "t.activo AND t.estado_tramite = 'RECIBIDO' AND t.origen_registro = 'SISTEMA'", None, 't.creado_en ASC')
 
 
 # ---------------- Un trámite ----------------

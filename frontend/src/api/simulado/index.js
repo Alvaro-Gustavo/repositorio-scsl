@@ -490,7 +490,7 @@ export const api = {
     }),
     porAsignar: () => op(() => {
       requiere('ASIGNAR_TRAMITE')
-      return bd.tramites.filter((t) => t.activo && t.estado_tramite === 'RECIBIDO').sort((a, b) => a.creado_en.localeCompare(b.creado_en)).map((t) => expandir(t))
+      return bd.tramites.filter((t) => t.activo && t.estado_tramite === 'RECIBIDO' && t.origen_registro === 'SISTEMA').sort((a, b) => a.creado_en.localeCompare(b.creado_en)).map((t) => expandir(t))
     }),
     similares: (id) => op(() => {
       requiere('BUSCAR')
