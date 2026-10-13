@@ -1,7 +1,8 @@
 # Repositorio SCSL — Los 3 proyectos alternativos
 
-Para decidir cómo integrar la **asignación según disponibilidad y carga** (lo que hoy hace el sistema de
-Google Sheets + WordPress), el proyecto existe en **tres versiones paralelas**. Las tres comparten todo lo anterior
+Para decidir cómo integrar la **asignación según disponibilidad, carga y plazos** (lo que hoy hace el sistema de
+Google Sheets + WordPress), el proyecto existe en **tres versiones paralelas**. A y B se construyeron siguiendo la
+lógica de esa hoja: hojas PERSONAL, AUSENCIAS, CATALOGOS y CONFIG. Las tres comparten todo lo anterior
 (trámites, informes, notificaciones, asistentes de IA, documentación) y se diferencian solo en esa función.
 
 ## 1. Resumen
@@ -13,7 +14,7 @@ Google Sheets + WordPress), el proyecto existe en **tres versiones paralelas**. 
 | Rama git | `main` (marca `v1.0-base`) | `opcion-a` | `opcion-b` |
 | Dirección | http://localhost:8080 | http://localhost:8082 | http://localhost:8083 |
 | Base de datos (puerto local) | 5433 | 5435 | 5436 |
-| Contenedores | `scsl_*` | `scsla_*` | `scslb_*` (+ `scslb_sincronizador`) |
+| Contenedores | `scsl_*` | `scsla_*` (+ `scsla_tareas`) | `scslb_*` (+ `scslb_tareas`) |
 | Datos | **Los reales** | De prueba (propios) | De prueba (propios) |
 
 Cada proyecto tiene **su propia base de datos y sus propios archivos**: lo que se haga en uno no afecta a los otros.
@@ -28,6 +29,12 @@ Cada proyecto tiene **su propia base de datos y sus propios archivos**: lo que s
 | Sugerencia de a quién asignar | No | **★ Sugerido**: presente y con menos carga | Igual que A |
 | Asignación automática | No | Botón **Automático** y modo *AUTOMATICA* | Igual que A |
 | Avisos de próximas ausencias | No | Sí (14 días) | Sí |
+| Plazo por tipo de trámite en **días hábiles** (sin feriados ni días de ausencia) | No (un plazo general en días calendario) | Sí, con semáforo *en plazo / por vencer / vencido* | Igual que A |
+| Carga máxima por profesional | No | Sí (por ejemplo 20; asistente 4) | Igual que A |
+| Trámites cuyo abogado sale de vacaciones | No se detectan | Se listan y se **reasignan al sugerido** con un clic | Igual que A, y se detectan solos desde el calendario |
+| Resumen diario de plazos por correo | No | Sí, a los jefes (y opcionalmente a cada profesional) | Igual que A |
+| Plazo en el calendario del abogado | No | Evento `.ics` en el correo de asignación | Igual que A |
+| Calendario compartido de ausencias del área | No | No | **Sí** (como `CAL_AUSENCIAS_ID` de la hoja) |
 | Necesita internet | No | **No** | Solo **salida** hacia Google (lectura) |
 | Configuración extra | — | Ninguna | Cuenta de servicio de Google + cada profesional comparte su calendario |
 
@@ -100,7 +107,7 @@ bash scripts/respaldo.sh                     # 1. respaldo
 git merge opcion-a                           # 2. o: git merge opcion-b
 docker exec scsl_bd bash /docker-entrypoint-initdb.d/08_disponibilidad.sh   # 3. agrega lo nuevo a la base real
 docker exec scsl_bd bash /docker-entrypoint-initdb.d/09_calendario.sh       #    (solo opción B)
-docker compose up -d --build                 # 4. reconstruye (en B también crea el sincronizador)
+docker compose up -d --build --remove-orphans   # 4. reconstruye y crea el servicio "tareas"
 ```
 
 Los scripts del paso 3 no borran nada y se pueden repetir.
