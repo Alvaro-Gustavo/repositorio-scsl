@@ -11,6 +11,7 @@ Todo corre con Docker en tres contenedores: base de datos (`bd`), backend (`app`
 | --- | --- |
 | [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md) | Tecnologías, dependencias, arquitectura y cómo se relacionan `bd/`, `backend/` y `frontend/` |
 | [docs/DESPLIEGUE_SERVIDOR.md](docs/DESPLIEGUE_SERVIDOR.md) | Guía para montar el sistema en un servidor de la red interna |
+| [docs/ALTERNATIVAS.md](docs/ALTERNATIVAS.md) | Los 3 proyectos paralelos (base, opción A, opción B) y cómo elegir |
 
 ---
 
