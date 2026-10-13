@@ -2,11 +2,12 @@
 # Implementa el contrato de frontend/src/api/real.js bajo el prefijo /api.
 import logging
 import os
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from . import config
+from . import config, informes
 from .bd import pool
 from .errores import registrar_manejadores
 from .rutas import acceso, administracion, catalogos, importacion, notificaciones, prompts, tablero, tramites
@@ -19,6 +20,7 @@ async def ciclo(_):
     for carpeta in ('informes', 'importaciones'):
         os.makedirs(os.path.join(config.CARPETA_DATOS, carpeta), exist_ok=True)
     pool.open(wait=True, timeout=60)
+    threading.Thread(target=informes.separar_paginas_pendientes, args=(pool,), daemon=True).start()
     yield
     pool.close()
 

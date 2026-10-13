@@ -6,7 +6,7 @@ from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, Query, Response, UploadFile
 
-from .. import informes
+from .. import contenido, informes
 from ..bd import conexion, parametro, todos, uno, valor
 from ..errores import ErrorApi, validar
 from ..seguridad import Usuario, auditar, requiere, usuario_actual
@@ -69,7 +69,7 @@ def _validar_registro(con, d):
 def buscar(q: str = '', orden: str = '', pagina: int = 1, por_pagina: int = 10,
            auditar_busqueda: str = Query('', alias='auditar'),
            anio: str = '', estado: str = '', entidad_id: str = '', tipo_tramite_id: str = '',
-           tipo_documento_id: str = '', profesional_id: str = '', procedencia_id: str = '',
+           tipo_documento_id: str = '', profesional_id: str = '', procedencia_id: str = '', en: str = '',
            u: Usuario = Depends(requiere('BUSCAR')), con=Depends(conexion)):
     valores = {'anio': anio, 'estado': estado, 'entidad_id': entidad_id, 'tipo_tramite_id': tipo_tramite_id,
                'tipo_documento_id': tipo_documento_id, 'profesional_id': profesional_id,
@@ -87,6 +87,9 @@ def buscar(q: str = '', orden: str = '', pagina: int = 1, por_pagina: int = 10,
         condiciones.append('''(t.vector_busqueda @@ websearch_to_tsquery('es_legal', %(q)s)
                                OR t.hoja_ruta ILIKE %(parcial)s OR t.numero_documento ILIKE %(parcial)s
                                OR t.registro_interno ILIKE %(parcial)s)''')
+        if en == 'contenido':
+            # Solo dentro del texto de los informes (peso D del índice).
+            condiciones.append("ts_filter(t.vector_busqueda, '{d}') @@ websearch_to_tsquery('es_legal', %(q)s)")
         rango = '''(ts_rank(t.vector_busqueda, websearch_to_tsquery('es_legal', %(q)s))
                     + CASE WHEN t.hoja_ruta ILIKE %(parcial)s OR t.numero_documento ILIKE %(parcial)s THEN 1 ELSE 0 END)'''
     donde = ' AND '.join(condiciones)
@@ -103,10 +106,23 @@ def buscar(q: str = '', orden: str = '', pagina: int = 1, por_pagina: int = 10,
     total = valor(con, f'SELECT count(*) FROM tramites t WHERE {donde}', p)
     items = lista(con, donde, p, orden_sql, extra=f'{rango}::float AS relevancia',
                   limite=por_pagina, salto=(pagina - 1) * por_pagina) if total else []
+    if q and items:
+        _agregar_coincidencias(con, items, q)
     if q and auditar_busqueda != 'false':
         auditar(con, u, 'BUSCAR', 'CONSULTA', detalle={'q': q, 'resultados': total})
     return {'items': items, 'total': total, 'pagina': pagina, 'por_pagina': por_pagina,
             'paginas': max(1, -(-total // por_pagina))}
+
+
+def _agregar_coincidencias(con, items, q):
+    """Fragmentos del informe donde aparece lo buscado, con la palabra marcada y su página."""
+    informes_ = {f['tramite_id']: f for f in todos(con, '''
+        SELECT tramite_id, texto_extraido, paginas FROM informes
+         WHERE activo AND texto_extraido IS NOT NULL AND tramite_id = ANY(%s)''', ([t['id'] for t in items],))}
+    for t in items:
+        i = informes_.get(t['id']) or {}
+        r = contenido.fragmentos(i.get('texto_extraido'), q, paginas=i.get('paginas'))
+        t['coincidencias_informe'] = r if r['total'] else None
 
 
 @rutas.get('/tramites/pendientes')
@@ -297,6 +313,21 @@ def paginas_informe(id_: str, u: Usuario = Depends(requiere('VER_INFORME')), con
         raise ErrorApi('No se encontró el archivo del informe en el servidor.', 410)
     auditar(con, u, 'VER_INFORME', 'TRAMITES', 'tramite', i['tramite_id'])
     return {'paginas': paginas, 'marca': u.correo}
+
+
+@rutas.get('/tramites/{id_}/informe/coincidencias')
+def coincidencias_informe(id_: str, q: str = '', u: Usuario = Depends(requiere('VER_INFORME')), con=Depends(conexion)):
+    """Dónde aparece q en cada página del informe (para resaltarlo en el visor)."""
+    i = _informe_activo(con, id_)
+    q = q.strip()[:200]
+    if not contenido.terminos(q):
+        return {'q': q, 'total': 0, 'paginas': []}
+    try:
+        paginas = informes.coincidencias(i['ruta_archivo'], q)
+    except (OSError, ValueError, RuntimeError):
+        raise ErrorApi('No se encontró el archivo del informe en el servidor.', 410)
+    auditar(con, u, 'BUSCAR_EN_INFORME', 'TRAMITES', 'tramite', i['tramite_id'], detalle={'q': q})
+    return {'q': q, 'total': sum(len(p) for p in paginas), 'paginas': paginas}
 
 
 @rutas.get('/tramites/{id_}/informe/descargar')

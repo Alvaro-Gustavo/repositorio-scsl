@@ -243,6 +243,7 @@ Python 3.12 + FastAPI, en `backend/`. Implementa el contrato de `frontend/src/ap
 | `app/seguridad.py` | Sesiones (token = id de la tabla `sesiones`, cierre por inactividad), permisos y auditoría |
 | `app/tramites.py` | Forma del trámite en las respuestas y permisos por trámite |
 | `app/informes.py` | Guardado de PDF, texto para la búsqueda y páginas con marca de agua |
+| `app/contenido.py` | Búsqueda dentro de los informes: fragmentos con la palabra resaltada y su ubicación en la página |
 | `app/rutas/` | Un archivo por módulo: acceso, catálogos, trámites, prompts, tablero, administración, importación |
 | `pruebas/prueba_api.py` | Prueba de punta a punta de toda la API |
 

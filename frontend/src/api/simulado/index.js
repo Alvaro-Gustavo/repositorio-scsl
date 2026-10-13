@@ -149,6 +149,37 @@ function textoBuscable(t) {
     t.informe?.texto
   ].filter(Boolean).join(' '))
 }
+// Fragmentos del informe con lo buscado marcado (misma forma que backend/app/contenido.py).
+function coincidenciasInforme(texto, q) {
+  const terminos = [...new Set(normalizar(q).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3 || /^\d+$/.test(w)))]
+  if (!texto || !terminos.length) return null
+  const norm = [...texto].map((c) => { const n = normalizar(c); return n.length === 1 ? n : c.toLowerCase() }).join('')
+  const posiciones = [...norm.matchAll(/[\p{L}\p{N}]+/gu)]
+    .filter((m) => terminos.some((t) => m[0].startsWith(t) || (t.length >= 5 && t.startsWith(m[0]) && m[0].length >= t.length - 2)))
+    .map((m) => [m.index, m.index + m[0].length])
+  if (!posiciones.length) return null
+  const fragmentos = []
+  let finAnterior = -1
+  posiciones.forEach(([ini, fin], i) => {
+    if (fragmentos.length >= 3 || ini < finAnterior) return
+    const desde = Math.max(0, ini - 90)
+    const hasta = Math.min(texto.length, fin + 90)
+    const partes = []
+    let cursor = desde
+    for (const [a, b] of posiciones.slice(i)) {
+      if (a >= hasta) break
+      if (a > cursor) partes.push({ texto: texto.slice(cursor, a), marca: false })
+      partes.push({ texto: texto.slice(a, b), marca: true })
+      cursor = b
+    }
+    if (cursor < hasta) partes.push({ texto: texto.slice(cursor, hasta), marca: false })
+    if (desde > 0) partes[0].texto = `…${partes[0].texto}`
+    if (hasta < texto.length) partes[partes.length - 1].texto += '…'
+    fragmentos.push({ pagina: null, partes })
+    finAnterior = hasta
+  })
+  return { total: posiciones.length, fragmentos }
+}
 function validarRegistro(d) {
   const campos = {}
   if (!d.hoja_ruta?.trim()) campos.hoja_ruta = 'Ingrese la hoja de ruta.'
@@ -382,6 +413,7 @@ export const api = {
           const texto = textoBuscable(t)
           const principal = normalizar([t.hoja_ruta, t.registro_interno, t.numero_documento, t.asunto].join(' '))
           if (!terminos.every((w) => texto.includes(w))) return null
+          if (f.en === 'contenido' && !terminos.every((w) => normalizar(t.informe?.texto).includes(w))) return null
           return { t, puntos: terminos.reduce((s, w) => s + (principal.includes(w) ? 3 : 1), 0) }
         }).filter(Boolean)
         if (f.auditar !== false) auditar('BUSCAR', 'CONSULTA', null, null, 'EXITOSO', { q: f.q, resultados: conPuntaje.length })
@@ -391,7 +423,12 @@ export const api = {
       else if (f.orden === 'reciente' || !terminos.length) conPuntaje.sort((a, b) => fecha(b.t).localeCompare(fecha(a.t)))
       else conPuntaje.sort((a, b) => b.puntos - a.puntos || fecha(b.t).localeCompare(fecha(a.t)))
       const pag = paginar(conPuntaje, f.pagina, f.por_pagina)
-      return { ...pag, items: pag.items.map(({ t, puntos }) => ({ ...expandir(t), relevancia: puntos })) }
+      return {
+        ...pag,
+        items: pag.items.map(({ t, puntos }) => ({
+          ...expandir(t), relevancia: puntos, ...(terminos.length ? { coincidencias_informe: coincidenciasInforme(t.informe?.texto, f.q) } : {})
+        }))
+      }
     }),
     obtener: (id) => op(() => {
       requiere('BUSCAR')
@@ -504,8 +541,16 @@ export const api = {
       const t = buscarTramite(id)
       if (!t.informe) throw new ErrorApi('Este trámite aún no tiene informe.', 404)
       auditar('VER_INFORME', 'TRAMITES', 'tramite', t.id)
+      // Las páginas simuladas no tienen el texto real: no hay posiciones que marcar.
       return { paginas: Array.from({ length: t.informe.paginas }, (_, i) => paginaSvg(t, i + 1, t.informe.paginas, u)), marca: u.correo }
     }, 400),
+    // Las páginas simuladas son dibujos sin el texto real: no hay posiciones que resaltar.
+    coincidenciasInforme: (id, q) => op(() => {
+      requiere('VER_INFORME')
+      const t = buscarTramite(id)
+      if (!t.informe) throw new ErrorApi('Este trámite aún no tiene informe.', 404)
+      return { q, total: 0, paginas: Array.from({ length: t.informe.paginas }, () => []) }
+    }),
     urlPaginaInforme: () => null,
     descargarInforme: (id) => op(() => {
       requiere('DESCARGAR_INFORME')

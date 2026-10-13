@@ -3,7 +3,7 @@
 // en la URL (route.query) para poder volver atrás y compartir la consulta.
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Search, SlidersHorizontal, X, Printer, ExternalLink, SearchX, ChevronDown } from '@lucide/vue'
+import { Search, SlidersHorizontal, X, Printer, ExternalLink, SearchX, ChevronDown, FileSearch } from '@lucide/vue'
 import { api } from '@/api'
 import { useCatalogos } from '@/stores/catalogos'
 import { imprimirConAuditoria } from '@/composables/utiles'
@@ -44,6 +44,8 @@ const q = computed(() => String(route.query.q || '').trim())
 const filtros = computed(() => Object.fromEntries(CLAVES_FILTRO.map((k) => [k, String(route.query[k] ?? '')])))
 const orden = computed(() => (ORDENES[route.query.orden] ? route.query.orden : 'relevancia'))
 const pagina = computed(() => Math.max(1, Number(route.query.pagina) || 1))
+// Dónde buscar el texto: en todo el trámite o solo dentro de los informes PDF.
+const soloContenido = computed(() => route.query.en === 'contenido')
 const cantidadFiltros = computed(() => CLAVES_FILTRO.filter((k) => filtros.value[k]).length)
 const hayCriterio = computed(() => !!q.value || cantidadFiltros.value > 0)
 
@@ -58,7 +60,7 @@ const ETIQUETAS = { anio: 'Año', estado: 'Estado', ...Object.fromEntries(FILTRO
 // Texto del criterio para la impresión y la auditoría.
 const criterio = computed(() => {
   const partes = []
-  if (q.value) partes.push(`«${q.value}»`)
+  if (q.value) partes.push(soloContenido.value ? `«${q.value}» dentro de los informes` : `«${q.value}»`)
   CLAVES_FILTRO.forEach((k) => { if (filtros.value[k]) partes.push(`${ETIQUETAS[k]}: ${nombreValor(k, filtros.value[k])}`) })
   if (!partes.length) return 'Trámites más recientes'
   if (orden.value !== 'relevancia') partes.push(`Orden: ${ORDENES[orden.value].toLowerCase()}`)
@@ -72,6 +74,7 @@ function navegar(cambios, { reiniciarPagina = true } = {}) {
   router.push({ name: 'consulta', query })
 }
 function buscar() { navegar({ q: texto.value.trim() }) }
+function cambiarAlcance(contenido) { navegar({ en: contenido ? 'contenido' : '' }) }
 function cambiarFiltro(clave, evento) { navegar({ [clave]: evento.target.value }) }
 function limpiarFiltros() { navegar(Object.fromEntries(CLAVES_FILTRO.map((k) => [k, '']))) }
 function irAPagina(n) {
@@ -85,7 +88,10 @@ async function cargar() {
   cargando.value = true
   error.value = ''
   try {
-    const r = await api.tramites.buscar({ q: q.value, ...filtros.value, orden: orden.value, pagina: pagina.value, por_pagina: 10 })
+    const r = await api.tramites.buscar({
+      q: q.value, ...filtros.value, orden: orden.value, pagina: pagina.value, por_pagina: 10,
+      ...(soloContenido.value && q.value ? { en: 'contenido' } : {})
+    })
     if (mio === turno) resultado.value = r
   } catch (e) {
     if (mio === turno) error.value = e.message || 'No se pudo realizar la búsqueda.'
@@ -136,6 +142,17 @@ function imprimir() {
         placeholder="Escriba cualquier criterio: entidad, hoja de ruta, número de documento, abogado, asunto…" />
       <button type="submit" class="boton boton-primario buscador-boton">Buscar</button>
     </form>
+    <fieldset class="alcance no-imprimir">
+      <legend class="sr-only">Dónde buscar</legend>
+      <label class="alcance-opcion" :class="{ activa: !soloContenido }">
+        <input type="radio" name="alcance" class="sr-only" :checked="!soloContenido" @change="cambiarAlcance(false)" />
+        <Search aria-hidden="true" /> En todo el trámite
+      </label>
+      <label class="alcance-opcion" :class="{ activa: soloContenido }">
+        <input type="radio" name="alcance" class="sr-only" :checked="soloContenido" @change="cambiarAlcance(true)" />
+        <FileSearch aria-hidden="true" /> Solo dentro de los informes PDF
+      </label>
+    </fieldset>
 
     <div class="consulta">
       <aside class="lateral no-imprimir">
@@ -218,7 +235,7 @@ function imprimir() {
             <button v-if="q" type="button" class="boton" @click="texto = ''; navegar({ q: '' })">Quitar el texto</button>
           </EstadoVacio>
           <div v-else class="lista" :class="{ actualizando: cargando }">
-            <TarjetaTramite v-for="t in resultado.items" :key="t.id" :tramite="t" />
+            <TarjetaTramite v-for="t in resultado.items" :key="t.id" :tramite="t" :q="q" />
           </div>
           <Paginacion :pagina="resultado.pagina" :paginas="resultado.paginas" :total="resultado.total" @cambiar="irAPagina" />
         </template>
@@ -228,7 +245,12 @@ function imprimir() {
 </template>
 
 <style scoped>
-.buscador { position: relative; display: flex; gap: var(--e-2); margin-bottom: var(--e-6); }
+.buscador { position: relative; display: flex; gap: var(--e-2); margin-bottom: var(--e-3); }
+.alcance { display: flex; flex-wrap: wrap; gap: var(--e-2); border: 0; margin: 0 0 var(--e-6); padding: 0; }
+.alcance-opcion { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border: 1px solid var(--linea); border-radius: 999px; background: var(--superficie); color: var(--texto-2); font-size: var(--t-sm); cursor: pointer; }
+.alcance-opcion svg { width: 16px; height: 16px; }
+.alcance-opcion.activa { border-color: var(--sello); background: var(--sello-suave); color: var(--tinta); font-weight: 600; }
+.alcance-opcion:focus-within { box-shadow: var(--foco); }
 .buscador-icono { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; color: var(--texto-3); pointer-events: none; }
 .buscador-entrada { min-height: 52px; padding-left: 46px; font-size: var(--t-lg); border-width: 1.5px; box-shadow: var(--sombra-panel); }
 .buscador-boton { min-height: 52px; padding: 0 var(--e-6); font-size: var(--t-md); }

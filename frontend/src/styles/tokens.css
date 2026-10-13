@@ -43,6 +43,11 @@
   --peligro: #b42318; --peligro-suave: #fdecea;
   --info: #3b4fb5;    --info-suave: #eceffb;
 
+  /* Resaltado de lo buscado en fragmentos y en el visor del informe */
+  --resaltado: #ffe066;               --resaltado-texto: #1b2430;
+  --resaltado-visor: rgba(255, 214, 10, 0.42);
+  --resaltado-actual: rgba(255, 128, 0, 0.5); --resaltado-actual-borde: #e8590c;
+
   /* Tipografia */
   --fuente-texto: 'Source Sans 3 Variable', 'Segoe UI', system-ui, sans-serif;
   --fuente-titulo: 'Source Serif 4 Variable', Georgia, 'Times New Roman', serif;

@@ -153,6 +153,14 @@ RECIBIDO ──(se asigna abogado)──► EN_ELABORACION ──(el abogado sub
 **Búsqueda:** cada trámite tiene `vector_busqueda` (texto indexado con pesos: códigos y asunto pesan más que el
 texto del PDF). Se recalcula solo cuando cambia el trámite, su informe, sus precedentes o un nombre de catálogo.
 
+**Búsqueda en el contenido de los informes:** el texto del PDF se guarda con las páginas separadas por ``
+(`informes.texto_extraido`; los informes anteriores se separan solos al arrancar el backend). Con un texto de
+búsqueda, cada resultado trae `coincidencias_informe`: fragmentos con la palabra marcada y su página
+(`app/contenido.py`, sin tildes ni mayúsculas). La opción «Solo dentro de los informes PDF» (`en=contenido`) filtra
+por el peso D del índice. El visor pide `GET /tramites/{id}/informe/coincidencias?q=` (rectángulos de cada palabra
+en fracciones de la página), los resalta sobre la imagen y salta entre ellos; se abre directo desde un fragmento
+con `/tramites/{id}?q=…&ver=informe&pagina=N`. Los PDF escaneados (sin texto) no se pueden buscar hasta tener OCR.
+
 **Seguridad en la base** (`06_seguridad.sh`): la aplicación se conecta como `scsl_app`, que **no puede** borrar
 trámites, modificar la auditoría, cambiar la matriz de permisos ni alterar la estructura. Si alguien vulnerara el
 backend, igual no podría saltarse esas reglas.
@@ -178,6 +186,7 @@ backend/
 │   ├── correo.py            Códigos de 6 dígitos (guardados con bcrypt) y envío por SMTP
 │   ├── tramites.py          Forma del trámite en las respuestas y sus permisos
 │   ├── informes.py          Guarda PDF, extrae texto, genera páginas con marca de agua
+│   ├── contenido.py         Búsqueda dentro de los informes: fragmentos resaltados y posición en la página
 │   └── rutas/               Un archivo por módulo
 │       ├── acceso.py        /auth/* y /perfil/* : ingreso, 2FA, activación, recuperación
 │       ├── catalogos.py     /catalogos/* : listar, sugerir parecidos, crear, unificar

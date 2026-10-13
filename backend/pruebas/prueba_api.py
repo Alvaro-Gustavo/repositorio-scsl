@@ -225,6 +225,22 @@ def main():
     r = esperar(200, pedir('GET', f'/tramites?estado=CONCLUIDO&entidad_id={entidad["id"]}', sec), 'filtros')
     ok(r['total'] == 1, 'filtra por estado y entidad', r)
 
+    # ---------- Busqueda en el contenido de los informes ----------
+    r = esperar(200, pedir('GET', f'/tramites?q=legal%20{SUFIJO}&en=contenido', sec), 'busqueda solo en informes')
+    item = next((t for t in r['items'] if t['id'] == t1['id']), None)
+    ok(item is not None, 'encuentra el tramite por el texto del PDF', r)
+    c = (item or {}).get('coincidencias_informe') or {}
+    marcadas = [p['texto'] for f in c.get('fragmentos', []) for p in f['partes'] if p['marca']]
+    ok(c.get('total', 0) >= 2 and 'legal' in [m.lower() for m in marcadas] and c['fragmentos'][0]['pagina'] == 1,
+       'fragmento con la palabra marcada y su pagina', c)
+    r = esperar(200, pedir('GET', f'/tramites?q=C-{SUFIJO}&en=contenido', sec), 'codigo que no esta en el PDF')
+    ok(all(t['id'] != t1['id'] for t in r['items']), 'solo en informes no busca en los datos del tramite', r)
+    m = esperar(200, pedir('GET', f'/tramites/{t1["id"]}/informe/coincidencias?q=AMPLIACI%C3%93N', sec), 'coincidencias en el visor')
+    ok(m['total'] == 1 and len(m['paginas']) == 1 and len(m['paginas'][0][0]) == 4
+       and all(0 <= v <= 1 for v in m['paginas'][0][0]), 'rectangulo de la palabra en la pagina (sin tildes)', m)
+    m = esperar(200, pedir('GET', f'/tramites/{t1["id"]}/informe/coincidencias?q=de', sec), 'palabra vacia')
+    ok(m['total'] == 0, 'no resalta palabras vacias', m)
+
     # ---------- Precedentes y similares ----------
     t2 = esperar(200, pedir('POST', '/tramites', jefe, {**registro, 'hoja_ruta': f'inf-{SUFIJO}-b',
                                                         'asunto': f'Ampliación de plazo de contratación {SUFIJO} segunda',

@@ -13,6 +13,7 @@ export const ETIQUETAS_ACCIONES = {
   BAJA_TRAMITE: 'Baja de trámite',
   VER_INFORME: 'Consulta de informe',
   DESCARGAR_INFORME: 'Descarga de informe',
+  BUSCAR_EN_INFORME: 'Búsqueda dentro de un informe',
   BUSCAR: 'Búsqueda',
   IMPRIMIR_CONSULTA: 'Impresión',
   CREAR_PRECEDENTE: 'Registro de precedente',

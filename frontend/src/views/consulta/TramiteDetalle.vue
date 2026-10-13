@@ -2,7 +2,7 @@
 // Expediente de un trámite: datos, informe, precedentes, cadena, similares e historial.
 // Las acciones visibles dependen de tramite.permisos (el backend vuelve a verificarlas).
 import { ref, reactive, computed, watch } from 'vue'
-import { useRouter, RouterLink } from 'vue-router'
+import { useRoute, useRouter, RouterLink } from 'vue-router'
 import {
   Pencil, UserPlus, FileUp, Archive, Trash2, Printer, Sparkles, Eye, Download, Link2, Plus, Search, FileX, ArrowLeft
 } from '@lucide/vue'
@@ -21,6 +21,7 @@ import VisorInforme from '@/components/tramites/VisorInforme.vue'
 import CadenaPrecedentes from '@/components/consulta/CadenaPrecedentes.vue'
 
 const props = defineProps({ id: { type: String, required: true } })
+const route = useRoute()
 const router = useRouter()
 const catalogos = useCatalogos()
 
@@ -59,7 +60,22 @@ const t = computed(() => tramite.value)
 const permisos = computed(() => t.value?.permisos || {})
 
 // ---------- Informe ----------
+// Desde la búsqueda llega ?q=palabra&ver=informe&pagina=N: se abre el visor en esa página con lo buscado resaltado.
 const visorAbierto = ref(false)
+const buscadoEnInforme = computed(() => String(route.query.q || '').trim())
+const paginaInicial = computed(() => Math.max(1, Number(route.query.pagina) || 1))
+watch(tramite, (v) => {
+  if (v?.informe && route.query.ver === 'informe' && v.id === props.id) visorAbierto.value = true
+})
+watch(visorAbierto, (abierto) => {
+  // Al cerrar se quita ver=informe para que recargar la página no lo vuelva a abrir.
+  if (!abierto && route.query.ver) {
+    const query = { ...route.query }
+    delete query.ver
+    delete query.pagina
+    router.replace({ query })
+  }
+})
 const quienSubeInforme = computed(() => {
   if (!t.value) return ''
   if (t.value.origen_registro === 'MIGRACION') return 'Registro histórico migrado del Excel: no tiene informe digital adjunto.'
@@ -372,7 +388,7 @@ function detalleHistorial(h) {
                   <div><dt>Subido</dt><dd>{{ t.informe.subido_por?.nombre_completo || '—' }} · {{ formatoFecha(t.informe.subido_en) }}</dd></div>
                 </dl>
                 <div class="informe-acciones">
-                  <button type="button" class="boton boton-primario" @click="visorAbierto = true"><Eye aria-hidden="true" /> Ver informe</button>
+                  <button type="button" class="boton boton-primario" @click="visorAbierto = true"><Eye aria-hidden="true" /> {{ buscadoEnInforme ? `Ver «${buscadoEnInforme}» en el informe` : 'Ver informe' }}</button>
                   <button v-if="permisos.descargar" type="button" class="boton" @click="descargarInforme(t)"><Download aria-hidden="true" /> Descargar PDF</button>
                 </div>
               </template>
@@ -403,7 +419,7 @@ function detalleHistorial(h) {
       </div>
 
       <!-- Modales -->
-      <VisorInforme v-if="t.informe" v-model="visorAbierto" :tramite="t" />
+      <VisorInforme v-if="t.informe" v-model="visorAbierto" :tramite="t" :buscar="buscadoEnInforme" :pagina-inicial="paginaInicial" />
 
       <Modal v-model="asignarAbierto" :titulo="t.profesional ? 'Reasignar abogado' : 'Asignar abogado'">
         <form id="form-asignar" class="formulario" @submit.prevent="asignar">

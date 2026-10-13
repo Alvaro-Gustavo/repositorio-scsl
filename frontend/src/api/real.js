@@ -92,7 +92,8 @@ export const api = {
 
   tramites: {
     // GET /tramites?q=&anio=&estado=&entidad_id=&tipo_tramite_id=&tipo_documento_id=&profesional_id=&procedencia_id=
-    //     &orden=relevancia|reciente|antiguo&pagina=1&por_pagina=10 -> {items[], total, pagina, paginas}
+    //     &orden=relevancia|reciente|antiguo&pagina=1&por_pagina=10&en=contenido? -> {items[], total, pagina, paginas}
+    //     con q, cada item trae coincidencias_informe: {total, fragmentos: [{pagina, partes: [{texto, marca}]}]} | null
     buscar: (filtros) => get('/tramites', filtros),
     // GET /tramites/{id} -> tramite completo (informe, precedentes, citado_por, historial)
     obtener: (id) => get(`/tramites/${id}`),
@@ -124,6 +125,8 @@ export const api = {
     similares: (id) => get(`/tramites/${id}/similares`),
     // GET /tramites/{id}/informe/paginas -> {paginas, marca} ; GET /tramites/{id}/informe/paginas/{n} -> imagen PNG con marca de agua
     paginasInforme: (id) => get(`/tramites/${id}/informe/paginas`),
+    // GET /tramites/{id}/informe/coincidencias?q= -> {q, total, paginas: [[[x0, y0, x1, y1]] por página, en fracciones 0-1]}
+    coincidenciasInforme: (id, q) => get(`/tramites/${id}/informe/coincidencias`, { q }),
     urlPaginaInforme: (id, n) => `${BASE}/tramites/${id}/informe/paginas/${n}`,
     // GET /tramites/{id}/informe/descargar -> PDF (solo DESCARGAR_INFORME)
     descargarInforme: (id) => pedir('GET', `/tramites/${id}/informe/descargar`, { binario: true })
