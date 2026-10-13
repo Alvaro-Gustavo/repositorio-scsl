@@ -9,7 +9,9 @@
 #
 # Funciona igual en Windows, Linux o macOS: solo necesita Docker.
 # ============================================================
-name: repositorio-scsl
+# PREFIJO (en .env) separa copias del proyecto que corren en el mismo equipo.
+# Sin PREFIJO: contenedores scsl_bd, scsl_app, scsl_web y volumenes scsl_datos, scsl_archivos.
+name: repositorio-${PREFIJO:-scsl}
 
 # Logs de Docker con tamano maximo (sin esto crecen hasta llenar el disco).
 x-registros: &registros
@@ -23,7 +25,7 @@ services:
   bd:
     <<: *registros
     image: postgres:16
-    container_name: scsl_bd
+    container_name: ${PREFIJO:-scsl}_bd
     restart: unless-stopped
     environment:
       POSTGRES_DB: repositorio_scsl
@@ -57,8 +59,8 @@ services:
   app:
     <<: *registros
     build: ./backend
-    image: repositorio-scsl-app
-    container_name: scsl_app
+    image: repositorio-${PREFIJO:-scsl}-app
+    container_name: ${PREFIJO:-scsl}_app
     restart: unless-stopped
     environment:
       BD_HOST: bd
@@ -86,8 +88,8 @@ services:
       context: ./frontend
       args:
         VITE_API_MODO: ${FRONTEND_MODO:-real}
-    image: repositorio-scsl-web
-    container_name: scsl_web
+    image: repositorio-${PREFIJO:-scsl}-web
+    container_name: ${PREFIJO:-scsl}_web
     restart: unless-stopped
     ports:
       - "${WEB_PUERTO:-8080}:80"
@@ -99,20 +101,20 @@ services:
   pgadmin:
     <<: *registros
     image: dpage/pgadmin4:latest
-    container_name: scsl_pgadmin
+    container_name: ${PREFIJO:-scsl}_pgadmin
     restart: unless-stopped
     profiles: ["herramientas"]
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_CORREO:-admin@scsl.local}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_CLAVE:-cambie-esta-clave}
     ports:
-      - "127.0.0.1:5050:80"
+      - "127.0.0.1:${PGADMIN_PUERTO:-5050}:80"
     depends_on:
       bd:
         condition: service_healthy
 
 volumes:
   scsl_datos:
-    name: scsl_datos
+    name: ${PREFIJO:-scsl}_datos
   scsl_archivos:
-    name: scsl_archivos
+    name: ${PREFIJO:-scsl}_archivos

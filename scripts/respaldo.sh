@@ -21,15 +21,17 @@ RETENER="${RESPALDOS_RETENIDOS:-30}"
 FECHA="$(date +%Y-%m-%d_%H%M)"
 SUPERUSUARIO="$(grep -E '^BD_SUPERUSUARIO=' .env 2>/dev/null | cut -d= -f2)"
 SUPERUSUARIO="${SUPERUSUARIO:-postgres}"
+PREFIJO="$(grep -E '^PREFIJO=' .env 2>/dev/null | cut -d= -f2)"
+PREFIJO="${PREFIJO:-scsl}"            # contenedor ${PREFIJO}_bd y volumen ${PREFIJO}_archivos
 
 mkdir -p "$DESTINO"
 echo "[$(date '+%F %T')] Respaldo iniciado"
 
 # 1) Base de datos: se escribe dentro del contenedor en /respaldos (= bd/respaldos del equipo).
-docker exec scsl_bd pg_dump -U "$SUPERUSUARIO" -Fc -d repositorio_scsl -f "/respaldos/scsl_${FECHA}.dump"
+docker exec "${PREFIJO}_bd" pg_dump -U "$SUPERUSUARIO" -Fc -d repositorio_scsl -f "/respaldos/scsl_${FECHA}.dump"
 
 # 2) Informes PDF: copia del volumen con un contenedor temporal de solo lectura.
-docker run --rm -v scsl_archivos:/datos:ro -v "$(pwd)/$DESTINO:/r" alpine \
+docker run --rm -v "${PREFIJO}_archivos:/datos:ro" -v "$(pwd)/$DESTINO:/r" alpine \
     tar czf "/r/archivos_${FECHA}.tgz" -C /datos .
 
 # 3) Verificacion minima: los archivos existen y no estan vacios.
@@ -40,7 +42,7 @@ for f in "$DESTINO/scsl_${FECHA}.dump" "$DESTINO/archivos_${FECHA}.tgz"; do
     fi
 done
 # El dump debe poder leerse (si esta danado, pg_restore falla aqui y no al necesitarlo).
-docker exec scsl_bd pg_restore --list "/respaldos/scsl_${FECHA}.dump" > /dev/null
+docker exec "${PREFIJO}_bd" pg_restore --list "/respaldos/scsl_${FECHA}.dump" > /dev/null
 tar tzf "$DESTINO/archivos_${FECHA}.tgz" > /dev/null
 
 # 4) Retencion: conserva los ultimos $RETENER de cada tipo.
