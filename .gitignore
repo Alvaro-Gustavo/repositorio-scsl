@@ -1,4 +1,5 @@
 .env
+/README.md
 bd/respaldos/*
 !bd/respaldos/.gitkeep
 __pycache__/
@@ -8,5 +9,13 @@ frontend/node_modules/
 frontend/dist/
 frontend/.env
 .playwright-mcp/
+frontend/GUIA_DESARROLLO.md
+README.md
+# Ignorar la carpeta de documentación
+docs/
+
+# Ignorar configuraciones locales de VS Code
+.vscode/*
+!.vscode/extensions.json
 # Archivos temporales de Word/Excel abiertos
 ~$*

@@ -70,7 +70,6 @@ frontend/
 │   ├── utils/                constantes, formatos de fecha, enmascarar datos
 │   └── styles/               tokens.css (colores y tipos), base.css, print.css
 ├── Dockerfile, nginx.conf    Compilación y servidor web con cabeceras de seguridad
-└── GUIA_DESARROLLO.md        Convenciones para agregar o cambiar pantallas
 ```
 
 ## 4. Modo real y modo demostración
