@@ -10,7 +10,6 @@ frontend/dist/
 frontend/.env
 .playwright-mcp/
 frontend/GUIA_DESARROLLO.md
-README.md
 # Ignorar la carpeta de documentación
 docs/
 
